@@ -1,0 +1,38 @@
+name: CI
+on: [push, pull_request]
+permissions: { contents: read }
+jobs:
+  node:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: ci_pass
+          POSTGRES_DB: game_inventory
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd="pg_isready -U app -d game_inventory"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+    strategy:
+      matrix: { node-version: [20, 22] }
+    env:
+      PGUSER: app
+      PGPASSWORD: ci_pass
+      PGDATABASE: game_inventory
+      SESSION_COOKIE_SECURE: "false"
+      APP_ORIGIN: http://127.0.0.1:3000
+      APP_VERSION: 0.1.0
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020
+        with:
+          node-version: "${{ matrix.node-version }}"
+          cache: npm
+      - run: npm ci
+      - run: DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@127.0.0.1:5432/${PGDATABASE}" npm run db:migrate
+      - run: DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@127.0.0.1:5432/${PGDATABASE}" npm run verify
+      - run: python3 scripts/secret_scan.py --tracked

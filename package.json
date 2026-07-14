@@ -1,0 +1,46 @@
+{
+  "name": "game-inventory-hub",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "next dev --hostname 127.0.0.1 --port 3100",
+    "build": "next build",
+    "start": "HOSTNAME=0.0.0.0 PORT=3000 node .next/standalone/server.js",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "db:generate": "drizzle-kit generate",
+    "db:migrate": "drizzle-kit migrate",
+    "db:seed": "tsx scripts/create-admin.ts",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+  },
+  "dependencies": {
+    "argon2": "0.44.0",
+    "drizzle-orm": "0.45.2",
+    "fast-xml-parser": "5.10.0",
+    "fflate": "0.8.2",
+    "lucide-react": "1.24.0",
+    "next": "16.2.10",
+    "pg": "8.22.0",
+    "react": "19.2.7",
+    "react-dom": "19.2.7",
+    "zod": "4.4.3"
+  },
+  "devDependencies": {
+    "@types/node": "latest",
+    "@types/pg": "latest",
+    "@types/react": "latest",
+    "@types/react-dom": "latest",
+    "drizzle-kit": "0.31.10",
+    "eslint": "9.39.5",
+    "eslint-config-next": "16.2.10",
+    "tsx": "4.23.0",
+    "typescript": "6.0.3",
+    "vitest": "4.1.10"
+  },
+  "overrides": {
+    "postcss": "8.5.18"
+  }
+}

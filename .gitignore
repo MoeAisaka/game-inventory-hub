@@ -1,0 +1,14 @@
+node_modules/
+.next/
+out/
+coverage/
+.env
+.env.*
+!.env.example
+*.log
+*.db
+*.sqlite*
+*.zip
+*.tsbuildinfo
+output/
+.DS_Store
