@@ -1,0 +1,19 @@
+{
+  "provider": "NINTENDO",
+  "externalUserId": "nintendo-account-id",
+  "displayName": "Nintendo display name",
+  "items": [
+    {
+      "externalGameId": "0100000000000000",
+      "name": "Example Nintendo Game",
+      "platform": "SWITCH_2",
+      "coverUrl": null,
+      "playtimeMinutes": 60,
+      "firstPlayedAt": null,
+      "lastPlayedAt": "2026-07-14T08:00:00.000Z",
+      "progressPercent": null,
+      "isOwned": true,
+      "rawMetadata": {}
+    }
+  ]
+}

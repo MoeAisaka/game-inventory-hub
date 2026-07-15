@@ -1,11 +1,11 @@
 {
   "name": "game-inventory-hub",
-  "version": "0.1.0",
+  "version": "0.13.1",
   "private": true,
   "type": "module",
   "scripts": {
     "dev": "next dev --hostname 127.0.0.1 --port 3100",
-    "build": "next build",
+    "build": "DATABASE_URL=${DATABASE_URL:-postgresql://build:build@127.0.0.1:1/build} next build",
     "start": "HOSTNAME=0.0.0.0 PORT=3000 node .next/standalone/server.js",
     "lint": "eslint .",
     "typecheck": "tsc --noEmit",
@@ -14,7 +14,12 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:seed": "tsx scripts/create-admin.ts",
-    "verify": "npm run lint && npm run typecheck && npm run test && npm run build"
+    "psn:test": "npm --prefix integrations/playstation-sidecar test",
+    "nintendo:test": "npm --prefix integrations/nintendo-sidecar test",
+    "catalog:export": "tsx scripts/export-catalog-rebuild-sources.ts",
+    "catalog:plan": "tsx scripts/build-catalog-rebuild-plan.ts",
+    "catalog:apply": "tsx scripts/apply-catalog-rebuild.ts",
+    "verify": "npm run lint && npm run typecheck && npm run test && npm run psn:test && npm run nintendo:test && npm run build"
   },
   "dependencies": {
     "argon2": "0.44.0",

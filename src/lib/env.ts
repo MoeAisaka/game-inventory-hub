@@ -8,7 +8,7 @@ const schema = z.object({
   APP_ORIGIN: z.preprocess((value) => value === "" ? undefined : value, z.string().url().optional()),
   SESSION_COOKIE_SECURE: booleanString,
   SESSION_TTL_DAYS: z.coerce.number().int().min(1).max(90).default(30),
-  APP_VERSION: z.string().min(1).max(50).default("0.11.0"),
+  APP_VERSION: z.string().min(1).max(50).default("0.13.1"),
   STEAM_WEB_API_KEY: optionalSecret,
   IGDB_CLIENT_ID: optionalSecret,
   IGDB_CLIENT_SECRET: optionalSecret,

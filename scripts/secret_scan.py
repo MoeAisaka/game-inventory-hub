@@ -12,7 +12,16 @@ import tempfile
 from pathlib import Path
 
 
-SKIP_DIRS = {".git", ".idea", ".vscode", "__pycache__", "node_modules", ".pytest_cache"}
+SKIP_DIRS = {
+    ".git",
+    ".idea",
+    ".next",
+    ".pytest_cache",
+    ".vscode",
+    "__pycache__",
+    "coverage",
+    "node_modules",
+}
 DENIED_COMPONENTS = {"backups", "credentials", "memory", "secrets", "sessions", "state"}
 DENIED_NAMES = {
     ".env",

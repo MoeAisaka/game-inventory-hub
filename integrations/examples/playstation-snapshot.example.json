@@ -1,0 +1,19 @@
+{
+  "provider": "PLAYSTATION",
+  "externalUserId": "psn-account-id",
+  "displayName": "PSN display name",
+  "items": [
+    {
+      "externalGameId": "NPWR00000_00",
+      "name": "Example PlayStation Game",
+      "platform": "PS5",
+      "coverUrl": "https://example.invalid/cover.jpg",
+      "playtimeMinutes": 120,
+      "firstPlayedAt": "2026-07-01T08:00:00.000Z",
+      "lastPlayedAt": "2026-07-14T08:00:00.000Z",
+      "progressPercent": 25,
+      "isOwned": true,
+      "rawMetadata": {}
+    }
+  ]
+}
