@@ -12,10 +12,11 @@ async function api(path: string, init: RequestInit) {
   return body.data;
 }
 
-export function SyncControl({ steamAccount, steamReady, igdbReady }: {
+export function SyncControl({ steamAccount, steamReady, igdbReady, platformCounts }: {
   steamAccount: { steamId: string; displayName: string | null; status: string; lastSyncedAt: string | null } | null;
   steamReady: boolean;
   igdbReady: boolean;
+  platformCounts: { playstation: number; nintendo: number };
 }) {
   const router = useRouter();
   const [busy, setBusy] = useState<string | null>(null);
@@ -50,7 +51,8 @@ export function SyncControl({ steamAccount, steamReady, igdbReady }: {
     <section className="integration-grid">
       <article className="integration-panel"><header><span className="tool-icon"><Gamepad2 size={19} /></span><div><h2>Steam</h2><p>游戏库、游玩时间、封面、名称、发售日与评分</p></div><span className={`result ${steamReady ? "success" : "warning"}`}>{steamReady ? "密钥已配置" : "待配置密钥"}</span></header><form onSubmit={saveSteam}><label>SteamID64<input name="steamId" required pattern="\d{17}" defaultValue={steamAccount?.steamId ?? ""} placeholder="17位数字" /></label><label>显示名称<input name="displayName" defaultValue={steamAccount?.displayName ?? ""} /></label><div className="panel-actions"><button className="secondary-button" disabled={busy !== null}>{busy === "steam-save" ? "保存中…" : "保存账号"}</button><button type="button" className="primary-button" disabled={!steamReady || !steamAccount || busy !== null} onClick={() => sync("steam")}><RefreshCw size={15} className={busy === "steam" ? "spin" : ""} /> 同步游戏库</button><button type="button" className="secondary-button" disabled={!steamAccount || busy !== null} onClick={() => sync("steam-metadata")}><RefreshCw size={15} className={busy === "steam-metadata" ? "spin" : ""} /> 补齐元数据</button></div></form><p className="integration-copy">游戏库同步建立入库记录与游玩快照；元数据同步每批处理 8 款，候选值保留来源，手工锁定字段不会被覆盖。</p>{steamAccount ? <small>状态 {steamAccount.status} · 最近同步 {steamAccount.lastSyncedAt ? formatShanghaiDateTime(steamAccount.lastSyncedAt) : "从未"}</small> : null}</article>
       <article className="integration-panel"><header><span className="tool-icon"><DatabaseZap size={19} /></span><div><h2>IGDB</h2><p>发售日、封面与预计通关时长</p></div><span className={`result ${igdbReady ? "success" : "warning"}`}>{igdbReady ? "凭证已配置" : "待配置凭证"}</span></header><p className="integration-copy">每次处理 20 个待匹配游戏；仅唯一精确匹配自动写入，歧义项跳过。手工发售日期不会被覆盖。</p><div className="panel-actions"><button className="primary-button" disabled={!igdbReady || busy !== null} onClick={() => sync("igdb")}><RefreshCw size={15} className={busy === "igdb" ? "spin" : ""} /> 拉取下一批</button></div></article>
-      <article className="integration-panel disabled"><header><span className="tool-icon"><ShieldAlert size={19} /></span><div><h2>PlayStation / Nintendo</h2><p>保守接入策略</p></div><span className="result neutral">未启用</span></header><p className="integration-copy">当前没有核验到适合个人服务的公开官方游戏库/游玩时长接口。系统已预留账号与映射结构，但不会保存平台密码或调用逆向登录接口。</p></article>
+      <article className="integration-panel"><header><span className="tool-icon"><ShieldAlert size={19} /></span><div><h2>PlayStation</h2><p>游戏库、游玩时间与奖杯快照</p></div><span className="result warning">适配器待授权</span></header><p className="integration-copy">主系统的只读快照入口已就绪，现有快照 {platformCounts.playstation} 项。后续使用隔离 Sidecar 换取短期令牌；NPSSO 不写数据库、不进入浏览器日志，首次同步只生成预览。</p></article>
+      <article className="integration-panel"><header><span className="tool-icon"><Gamepad2 size={19} /></span><div><h2>Nintendo</h2><p>游玩活动与家长控制快照</p></div><span className="result warning">适配器待评估</span></header><p className="integration-copy">标准化只读快照入口已就绪，现有快照 {platformCounts.nintendo} 项。Nintendo 暂无稳定的完整购买库接口；AGPL 逆向客户端只允许作为隔离 Sidecar，不复制进主系统。</p></article>
     </section>
   </>;
 }

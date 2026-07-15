@@ -46,7 +46,7 @@ async function jsonRequest(url: URL, fetcher: Fetcher) {
   let response: Response;
   try {
     response = await fetcher(url, {
-      headers: { "user-agent": "GameInventoryHub/0.1 (+https://example.invalid)" },
+      headers: { "user-agent": "GameInventoryHub/0.13.1" },
       signal: AbortSignal.timeout(env().EXTERNAL_REQUEST_TIMEOUT_MS)
     });
   } catch {

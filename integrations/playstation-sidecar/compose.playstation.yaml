@@ -1,0 +1,29 @@
+services:
+  playstation-sidecar:
+    build:
+      context: .
+    image: game-inventory-playstation-sidecar:0.1.0
+    restart: "no"
+    read_only: true
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+    environment:
+      PSN_AUTH_STATE_FILE: /state/auth.json
+      PSN_NPSSO_FILE: /run/secrets/psn_npsso
+      PSN_PREVIEW_OUTPUT_FILE: /output/preview-latest.json
+      PSN_REQUEST_TIMEOUT_MS: "20000"
+      PSN_MAX_ATTEMPTS: "3"
+    volumes:
+      - ./state:/state
+      - ./output:/output
+    secrets:
+      - psn_npsso
+
+secrets:
+  psn_npsso:
+    file: ./secrets/psn_npsso

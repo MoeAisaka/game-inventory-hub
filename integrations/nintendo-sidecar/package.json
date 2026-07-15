@@ -1,0 +1,23 @@
+{
+  "name": "game-inventory-nintendo-sidecar",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "license": "AGPL-3.0-or-later",
+  "description": "Isolated preview-only Nintendo NSO adapter with optional Parental Controls enrichment",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "preview": "node src/main.mjs",
+    "test": "node --test"
+  },
+  "dependencies": {
+    "nxapi": "1.6.1-next.254"
+  },
+  "overrides": {
+    "node-notifier": {
+      "uuid": "11.1.1"
+    }
+  }
+}

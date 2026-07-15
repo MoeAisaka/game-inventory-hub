@@ -55,10 +55,8 @@ export function uniqueExactIgdbCandidate<T extends { name: string; alternative_n
   return exact.length === 1 ? exact[0] : null;
 }
 
-function canonicalEnglishName(candidateName: string, localName: string) {
-  return /[A-Za-z]/.test(candidateName) && normalizedGameTitle(candidateName) !== normalizedGameTitle(localName)
-    ? candidateName
-    : null;
+export function canonicalEnglishName(candidateName: string) {
+  return /[A-Za-z]/.test(candidateName) ? candidateName : null;
 }
 
 async function igdbToken(fetcher: Fetcher) {
@@ -184,7 +182,7 @@ export async function syncIgdbMetadata(ownerUserId: string, idempotencyKey: stri
           updatedAt: new Date(),
           version: sql`${games.version} + 1`
         };
-        const englishName = canonicalEnglishName(metadata.candidate.name, game.nameZh);
+        const englishName = canonicalEnglishName(metadata.candidate.name);
         if (!game.nameEn && englishName) {
           patch.nameEn = englishName;
           patch.nameEnSource = "IGDB";

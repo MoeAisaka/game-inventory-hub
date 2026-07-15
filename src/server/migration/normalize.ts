@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import type { ImportIssue } from "@/server/db/schema";
+import { splitProductNameAndPurchaseUrl } from "@/lib/purchase-link";
 import {
   columnLetters,
   type CellPrimitive,
@@ -236,7 +237,9 @@ function normalizeInventory(sheet: ParsedWorksheet) {
     }
     const issues: ImportIssue[] = [];
     const rawPayload = snapshotRow(sheet, sourceRow, 1, 17);
-    const productName = nullableText(sheet, sourceRow, 1, true);
+    const rawProductName = nullableText(sheet, sourceRow, 1, true);
+    const splitProduct = rawProductName ? splitProductNameAndPurchaseUrl(rawProductName) : null;
+    const productName = splitProduct?.productName ?? null;
     const colorSource = nullableText(sheet, sourceRow, 6, true);
     if (!productName) error(issues, "INVENTORY_PRODUCT_REQUIRED", "库存商品名称不能为空", "A");
     if (!colorSource) error(issues, "INVENTORY_COLOR_REQUIRED", "库存颜色不能为空", "F");
@@ -252,6 +255,7 @@ function normalizeInventory(sheet: ParsedWorksheet) {
     const repurchaseSource = nullableText(sheet, sourceRow, 15, true);
     const normalizedPayload = {
       productName,
+      purchaseUrl: splitProduct?.purchaseUrl ?? null,
       priorityCode: nullableText(sheet, sourceRow, 2, true),
       brand: nullableText(sheet, sourceRow, 3, true),
       style: nullableText(sheet, sourceRow, 4, true),

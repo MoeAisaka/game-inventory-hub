@@ -4,8 +4,10 @@ import { z } from "zod";
 import { writeAudit } from "@/server/audit";
 import { db } from "@/server/db";
 import { inventoryItems, inventoryMovements } from "@/server/db/schema";
+import { splitProductNameAndPurchaseUrl } from "@/lib/purchase-link";
 
 const nullableText = (max: number) => z.string().trim().max(max).nullable();
+const nullablePurchaseUrl = z.string().trim().max(2048).url().refine((value) => /^https?:\/\//i.test(value), "购买链接只支持 HTTP/HTTPS").nullable();
 
 export const inventoryQuerySchema = z.object({
   q: z.string().trim().max(100).default(""),
@@ -15,6 +17,7 @@ export const inventoryQuerySchema = z.object({
 
 export const createInventoryItemSchema = z.object({
   productName: z.string().trim().min(1).max(300),
+  purchaseUrl: nullablePurchaseUrl.optional(),
   color: z.string().trim().min(1).max(100),
   brand: nullableText(200).optional(),
   style: nullableText(200).optional(),
@@ -24,6 +27,19 @@ export const createInventoryItemSchema = z.object({
   openedQuantity: z.number().int().min(0).default(0),
   currentLocation: nullableText(500).optional(),
   notes: nullableText(3000).optional()
+});
+
+export const updateInventoryItemSchema = z.object({
+  productName: z.string().trim().min(1).max(300),
+  purchaseUrl: nullablePurchaseUrl.optional(),
+  color: z.string().trim().min(1).max(100),
+  brand: nullableText(200).optional(),
+  style: nullableText(200).optional(),
+  material: nullableText(500).optional(),
+  unitPrice: z.number().min(0).nullable().optional(),
+  currentLocation: nullableText(500).optional(),
+  notes: nullableText(3000).optional(),
+  version: z.number().int().positive()
 });
 
 const movementType = z.enum(["PURCHASE", "OPENED", "CONSUMED", "DISCARDED", "GIFTED", "TRANSFER_IN", "TRANSFER_OUT", "ADJUSTMENT"]);
@@ -50,6 +66,7 @@ export async function listInventory(ownerUserId: string, input: z.infer<typeof i
     const pattern = escapedLike(input.q);
     conditions.push(sql`(
       ${inventoryItems.productName} ILIKE ${pattern} ESCAPE '\\'
+      OR ${inventoryItems.purchaseUrl} ILIKE ${pattern} ESCAPE '\\'
       OR ${inventoryItems.brand} ILIKE ${pattern} ESCAPE '\\'
       OR ${inventoryItems.color} ILIKE ${pattern} ESCAPE '\\'
       OR ${inventoryItems.currentLocation} ILIKE ${pattern} ESCAPE '\\'
@@ -64,10 +81,12 @@ export async function listInventory(ownerUserId: string, input: z.infer<typeof i
 }
 
 export async function createInventoryItem(ownerUserId: string, input: z.infer<typeof createInventoryItemSchema>, requestId: string = randomUUID()) {
+  const normalized = splitProductNameAndPurchaseUrl(input.productName, input.purchaseUrl);
   const record = await db.transaction(async (transaction) => {
     const [item] = await transaction.insert(inventoryItems).values({
       ownerUserId,
-      productName: input.productName,
+      productName: normalized.productName,
+      purchaseUrl: normalized.purchaseUrl,
       color: input.color,
       colorSource: input.color,
       brand: input.brand ?? null,
@@ -93,6 +112,40 @@ export async function createInventoryItem(ownerUserId: string, input: z.infer<ty
   });
   await writeAudit({ actorUserId: ownerUserId, action: "inventory.create", entityType: "inventory_item", entityId: record.id, outcome: "SUCCESS", requestId });
   return record;
+}
+
+export async function updateInventoryItem(ownerUserId: string, itemId: string, input: z.infer<typeof updateInventoryItemSchema>, requestId: string = randomUUID()) {
+  const normalized = splitProductNameAndPurchaseUrl(input.productName, input.purchaseUrl);
+  const result = await db.transaction(async (transaction) => {
+    await transaction.execute(sql`SELECT id FROM inventory_items WHERE id = ${itemId} FOR UPDATE`);
+    const current = (await transaction.select().from(inventoryItems).where(and(
+      eq(inventoryItems.id, itemId),
+      eq(inventoryItems.ownerUserId, ownerUserId),
+      isNull(inventoryItems.deletedAt)
+    )).limit(1))[0];
+    if (!current) return null;
+    if (current.version !== input.version) return { conflict: true as const, current };
+    const [item] = await transaction.update(inventoryItems).set({
+      productName: normalized.productName,
+      purchaseUrl: normalized.purchaseUrl,
+      color: input.color,
+      colorSource: input.color,
+      brand: input.brand ?? null,
+      style: input.style ?? null,
+      material: input.material ?? null,
+      unitPrice: input.unitPrice === null || input.unitPrice === undefined ? null : String(input.unitPrice),
+      currentLocation: input.currentLocation ?? null,
+      notes: input.notes ?? null,
+      version: sql`${inventoryItems.version} + 1`,
+      updatedAt: new Date()
+    }).where(eq(inventoryItems.id, itemId)).returning();
+    if (!item) throw new Error("INVENTORY_UPDATE_FAILED");
+    return { conflict: false as const, item };
+  });
+  if (result && "item" in result) {
+    await writeAudit({ actorUserId: ownerUserId, action: "inventory.update", entityType: "inventory_item", entityId: itemId, outcome: "SUCCESS", requestId, metadata: { purchaseUrlChanged: true } });
+  }
+  return result;
 }
 
 export async function addInventoryMovement(ownerUserId: string, itemId: string, input: z.infer<typeof inventoryMovementSchema>, requestId: string = randomUUID()) {

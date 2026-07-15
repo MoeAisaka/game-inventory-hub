@@ -82,6 +82,7 @@ export const externalProvider = pgEnum("external_provider", [
 export const externalAccountStatus = pgEnum("external_account_status", ["ACTIVE", "DISABLED", "ERROR"]);
 export const syncJobStatus = pgEnum("sync_job_status", ["PENDING", "RUNNING", "SUCCEEDED", "PARTIAL", "FAILED"]);
 export const steamLibraryMatchStatus = pgEnum("steam_library_match_status", ["MATCHED", "UNMATCHED", "IGNORED"]);
+export const platformLibraryMatchStatus = pgEnum("platform_library_match_status", ["MATCHED", "UNMATCHED", "IGNORED"]);
 export const gameMetadataField = pgEnum("game_metadata_field", [
   "NAME_ZH",
   "NAME_EN",
@@ -639,6 +640,43 @@ export const steamLibraryItems = pgTable("steam_library_items", {
   `)
 ]);
 
+export const platformLibraryItems = pgTable("platform_library_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: externalProvider("provider").notNull(),
+  externalGameId: text("external_game_id").notNull(),
+  name: text("name").notNull(),
+  platform: text("platform"),
+  coverUrl: text("cover_url"),
+  playtimeMinutes: integer("playtime_minutes").default(0).notNull(),
+  firstPlayedAt: timestamp("first_played_at", { withTimezone: true, precision: 3 }),
+  lastPlayedAt: timestamp("last_played_at", { withTimezone: true, precision: 3 }),
+  progressPercent: integer("progress_percent"),
+  isOwned: boolean("is_owned").default(true).notNull(),
+  matchStatus: platformLibraryMatchStatus("match_status").default("UNMATCHED").notNull(),
+  matchedGameId: uuid("matched_game_id").references(() => games.id, { onDelete: "set null" }),
+  matchConfidence: integer("match_confidence").default(0).notNull(),
+  matchMethod: text("match_method").default("UNMATCHED").notNull(),
+  rawMetadata: jsonb("raw_metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (table) => [
+  uniqueIndex("platform_library_items_owner_provider_game_key").on(table.ownerUserId, table.provider, table.externalGameId),
+  index("platform_library_items_owner_provider_status_idx").on(table.ownerUserId, table.provider, table.matchStatus),
+  index("platform_library_items_matched_game_idx").on(table.matchedGameId),
+  check("platform_library_items_provider_value", sql`${table.provider} IN ('PLAYSTATION', 'NINTENDO')`),
+  check("platform_library_items_external_id_length", sql`char_length(${table.externalGameId}) BETWEEN 1 AND 300`),
+  check("platform_library_items_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 300`),
+  check("platform_library_items_playtime_nonnegative", sql`${table.playtimeMinutes} >= 0`),
+  check("platform_library_items_progress_range", sql`${table.progressPercent} IS NULL OR ${table.progressPercent} BETWEEN 0 AND 100`),
+  check("platform_library_items_confidence_range", sql`${table.matchConfidence} BETWEEN 0 AND 100`),
+  check("platform_library_items_match_invariant", sql`
+    (${table.matchStatus} = 'MATCHED' AND ${table.matchedGameId} IS NOT NULL)
+    OR (${table.matchStatus} <> 'MATCHED' AND ${table.matchedGameId} IS NULL)
+  `)
+]);
+
 export const assets = pgTable("assets", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
@@ -673,6 +711,7 @@ export const inventoryItems = pgTable("inventory_items", {
   id: uuid("id").defaultRandom().primaryKey(),
   ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   productName: text("product_name").notNull(),
+  purchaseUrl: text("purchase_url"),
   priorityCode: text("priority_code"),
   brand: text("brand"),
   style: text("style"),
@@ -698,6 +737,7 @@ export const inventoryItems = pgTable("inventory_items", {
   uniqueIndex("inventory_items_import_source_key").on(table.sourceBatchId, table.sourceRow),
   index("inventory_items_owner_name_idx").on(table.ownerUserId, table.productName),
   check("inventory_items_name_length", sql`char_length(${table.productName}) BETWEEN 1 AND 300`),
+  check("inventory_items_purchase_url", sql`${table.purchaseUrl} IS NULL OR (char_length(${table.purchaseUrl}) BETWEEN 8 AND 2048 AND ${table.purchaseUrl} ~ '^https?://')`),
   check("inventory_items_quantity_nonnegative", sql`${table.unopenedQuantity} >= 0 AND ${table.openedQuantity} >= 0`),
   check("inventory_items_unit_price_nonnegative", sql`${table.unitPrice} IS NULL OR ${table.unitPrice} >= 0`),
   check("inventory_items_version_positive", sql`${table.version} > 0`)
