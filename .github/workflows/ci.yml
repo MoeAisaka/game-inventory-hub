@@ -33,6 +33,8 @@ jobs:
           node-version: "${{ matrix.node-version }}"
           cache: npm
       - run: npm ci
+      - run: npm --prefix integrations/playstation-sidecar ci --ignore-scripts
+      - run: npm --prefix integrations/nintendo-sidecar ci --ignore-scripts
       - run: DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@127.0.0.1:5432/${PGDATABASE}" npm run db:migrate
       - run: DATABASE_URL="postgresql://${PGUSER}:${PGPASSWORD}@127.0.0.1:5432/${PGDATABASE}" npm run verify
       - run: python3 scripts/secret_scan.py --tracked
