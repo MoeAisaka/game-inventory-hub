@@ -68,7 +68,12 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
           {hasFilters ? <a className="text-button filter-reset" href="/games">重置</a> : null}
         </form>
       </section>
-      <GameManager initialGames={initialGames} total={result.total} />
+      <GameManager key={JSON.stringify({ q: parsed.q, status: parsed.status, platform: parsed.platform, sort: parsed.sort })} initialGames={initialGames} total={result.total} selectionQuery={{
+        q: parsed.q,
+        status: parsed.status,
+        platform: parsed.platform,
+        sort: parsed.sort
+      }} />
       <nav className="pagination" aria-label="分页">
         {parsed.page > 1 ? <a href={pageHref(parsed.page - 1)}>上一页</a> : <span />}
         <span>第 {parsed.page} / {pages} 页，共 {result.total} 项</span>

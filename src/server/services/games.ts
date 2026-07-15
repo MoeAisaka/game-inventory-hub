@@ -12,6 +12,7 @@ import { deriveActivityState, derivePurchaseState } from "@/lib/game-insights";
 import { writeAudit } from "@/server/audit";
 import { db } from "@/server/db";
 import {
+  auditLogs,
   gameAcquisitions,
   gameFieldLocks,
   gamePlaySessions,
@@ -143,25 +144,33 @@ async function replacePrimaryReleaseEvent(
   transaction: Parameters<Parameters<typeof db.transaction>[0]>[0],
   game: typeof games.$inferSelect
 ) {
-  const dedupeKey = releaseDedupeKey(game.id);
+  await replacePrimaryReleaseEvents(transaction, [game]);
+}
+
+async function replacePrimaryReleaseEvents(
+  transaction: Parameters<Parameters<typeof db.transaction>[0]>[0],
+  records: Array<typeof games.$inferSelect>
+) {
+  if (!records.length) return;
+  const dedupeKeys = records.map((record) => releaseDedupeKey(record.id));
   await transaction.delete(gameReleaseEvents).where(and(
-    eq(gameReleaseEvents.ownerUserId, game.ownerUserId),
-    eq(gameReleaseEvents.dedupeKey, dedupeKey)
+    eq(gameReleaseEvents.ownerUserId, records[0].ownerUserId),
+    inArray(gameReleaseEvents.dedupeKey, dedupeKeys)
   ));
-  if (!game.releaseDate || !game.platform || game.deletedAt) return;
-  await transaction.insert(gameReleaseEvents).values({
+  const values = records.filter((game) => game.releaseDate && game.platform && !game.deletedAt).map((game) => ({
     ownerUserId: game.ownerUserId,
     gameId: game.id,
     source: game.releaseDateSource,
-    dedupeKey,
+    dedupeKey: releaseDedupeKey(game.id),
     externalGameId: game.steamAppId ? String(game.steamAppId) : game.igdbGameId ? String(game.igdbGameId) : null,
     nameZh: game.nameZh,
     nameEn: game.nameEn,
-    platform: game.platform,
-    releaseDate: game.releaseDate,
+    platform: game.platform!,
+    releaseDate: game.releaseDate!,
     region: "GLOBAL",
     coverUrl: game.coverUrl
-  });
+  }));
+  if (values.length) await transaction.insert(gameReleaseEvents).values(values);
 }
 
 export const createGameSchema = gameFields.superRefine((value, context) => {
@@ -183,6 +192,39 @@ export const gameQuerySchema = z.object({
   includeDeleted: queryBoolean
 });
 
+const bulkSelectionSchema = z.discriminatedUnion("mode", [
+  z.object({
+    mode: z.literal("IDS"),
+    ids: z.array(z.string().uuid()).min(1).max(1000).transform((values) => [...new Set(values)])
+  }),
+  z.object({
+    mode: z.literal("FILTER"),
+    query: gameQuerySchema.pick({ q: true, status: true, platform: true, sort: true }),
+    excludedIds: z.array(z.string().uuid()).max(1000).transform((values) => [...new Set(values)]).default([]),
+    expectedTotal: z.number().int().min(1).max(1000)
+  })
+]);
+
+const bulkActionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.literal("STATUSES"),
+    mode: z.enum(["ADD", "REMOVE", "REPLACE"]),
+    statuses: z.array(gameStatus).min(1).max(gameStatusValues.length).transform(uniqueGameStatuses)
+  }),
+  z.object({ type: z.literal("PLATFORM"), platform: z.string().trim().min(1).max(60).nullable() }),
+  z.object({
+    type: z.literal("QUEUE"),
+    start: z.number().int().min(1).max(9999),
+    step: z.number().int().min(1).max(9999).default(1)
+  }),
+  z.object({ type: z.literal("DELETE") })
+]);
+
+export const bulkGameSchema = z.object({
+  selection: bulkSelectionSchema,
+  action: bulkActionSchema
+});
+
 export const playSessionSchema = z.object({
   minutes: z.number().int().min(1).max(24 * 60),
   startedAt: z.coerce.date(),
@@ -198,7 +240,7 @@ function escapedLike(value: string) {
   return `%${value.replace(/[\\%_]/g, (character) => `\\${character}`)}%`;
 }
 
-export async function listGames(ownerUserId: string, input: z.infer<typeof gameQuerySchema>) {
+function gameConditions(ownerUserId: string, input: Pick<z.infer<typeof gameQuerySchema>, "q" | "status" | "platform" | "includeDeleted">) {
   const conditions = [eq(games.ownerUserId, ownerUserId)];
   if (!input.includeDeleted) conditions.push(isNull(games.deletedAt));
   if (input.q) {
@@ -215,19 +257,28 @@ export async function listGames(ownerUserId: string, input: z.infer<typeof gameQ
       and ${inArray(gameStatusAssignments.status, input.status)}
   )`);
   if (input.platform.length) conditions.push(inArray(games.platform, input.platform));
+  return conditions;
+}
+
+function gameOrder(sort: z.infer<typeof gameQuerySchema>["sort"]) {
   const isBacklog = sql`exists (
     select 1 from ${gameStatusAssignments}
     where ${gameStatusAssignments.gameId} = ${games.id}
       and ${gameStatusAssignments.status} = 'BACKLOG'
   )`;
-  const order = input.sort === "name_asc" ? [asc(games.nameZh)]
-    : input.sort === "release_asc" ? [sql`${games.releaseDate} ASC NULLS LAST`, asc(games.nameZh)]
-      : input.sort === "queue_asc" ? [
+  return sort === "name_asc" ? [asc(games.nameZh)]
+    : sort === "release_asc" ? [sql`${games.releaseDate} ASC NULLS LAST`, asc(games.nameZh)]
+      : sort === "queue_asc" ? [
         sql`CASE WHEN ${isBacklog} AND ${games.queueOrder} IS NOT NULL THEN 0 WHEN ${isBacklog} THEN 1 ELSE 2 END`,
         sql`${games.queueOrder} ASC NULLS LAST`,
         asc(games.nameZh)
       ]
         : [desc(games.updatedAt)];
+}
+
+export async function listGames(ownerUserId: string, input: z.infer<typeof gameQuerySchema>) {
+  const conditions = gameConditions(ownerUserId, input);
+  const order = gameOrder(input.sort);
   const where = and(...conditions);
   const [records, [total]] = await Promise.all([
     db.select().from(games).where(where).orderBy(...order).limit(input.pageSize).offset((input.page - 1) * input.pageSize),
@@ -244,6 +295,152 @@ export async function listGames(ownerUserId: string, input: z.infer<typeof gameQ
     page: input.page,
     pageSize: input.pageSize
   };
+}
+
+type GameTransaction = Parameters<Parameters<typeof db.transaction>[0]>[0];
+type BulkInput = z.infer<typeof bulkGameSchema>;
+
+async function resolveBulkSelection(
+  transaction: GameTransaction,
+  ownerUserId: string,
+  selection: BulkInput["selection"]
+) {
+  if (selection.mode === "IDS") {
+    const rows = await transaction.select().from(games).where(and(
+      eq(games.ownerUserId, ownerUserId),
+      isNull(games.deletedAt),
+      inArray(games.id, selection.ids)
+    ));
+    if (rows.length !== selection.ids.length) throw new Error("BULK_SELECTION_STALE");
+    const byId = new Map(rows.map((row) => [row.id, row]));
+    return selection.ids.map((id) => byId.get(id)!);
+  }
+
+  const where = and(...gameConditions(ownerUserId, {
+    ...selection.query,
+    includeDeleted: false
+  }));
+  const rows = await transaction.select().from(games).where(where).orderBy(...gameOrder(selection.query.sort));
+  if (rows.length !== selection.expectedTotal) throw new Error("BULK_SELECTION_STALE");
+  const excluded = new Set(selection.excludedIds);
+  return rows.filter((row) => !excluded.has(row.id));
+}
+
+async function applyBulkStatusAction(
+  transaction: GameTransaction,
+  records: Array<typeof games.$inferSelect>,
+  action: Extract<BulkInput["action"], { type: "STATUSES" }>
+) {
+  const ids = records.map((record) => record.id);
+  const assignedRows = await transaction.select().from(gameStatusAssignments)
+    .where(inArray(gameStatusAssignments.gameId, ids));
+  const assigned = new Map<string, GameStatus[]>();
+  for (const row of assignedRows) assigned.set(row.gameId, [...(assigned.get(row.gameId) ?? []), row.status]);
+  const requested = new Set<GameStatus>(action.statuses);
+  const targets = records.map((record) => {
+    const current = uniqueGameStatuses(assigned.get(record.id) ?? (record.playStatus ? [record.playStatus] : []));
+    const statuses = action.mode === "REPLACE" ? action.statuses
+      : action.mode === "ADD" ? uniqueGameStatuses([...current, ...action.statuses])
+        : current.filter((status) => !requested.has(status));
+    return { id: record.id, statuses };
+  });
+
+  await transaction.delete(gameStatusAssignments).where(inArray(gameStatusAssignments.gameId, ids));
+  const statusValues = targets.flatMap((target) => target.statuses.map((status) => ({ gameId: target.id, status })));
+  if (statusValues.length) await transaction.insert(gameStatusAssignments).values(statusValues);
+  const values = sql.join(targets.map((target) => sql`(
+    ${target.id}::uuid,
+    CAST(${legacyStatusFor(target.statuses)} AS game_play_status),
+    ${target.statuses.includes("BACKLOG")}::boolean
+  )`), sql`, `);
+  await transaction.execute(sql`
+    WITH target(id, play_status, has_backlog) AS (VALUES ${values})
+    UPDATE ${games} AS game
+    SET play_status = target.play_status,
+        queue_order = CASE WHEN target.has_backlog THEN game.queue_order ELSE NULL END,
+        updated_at = NOW(),
+        version = game.version + 1
+    FROM target
+    WHERE game.id = target.id
+  `);
+}
+
+async function applyBulkQueueAction(
+  transaction: GameTransaction,
+  records: Array<typeof games.$inferSelect>,
+  action: Extract<BulkInput["action"], { type: "QUEUE" }>
+) {
+  const last = action.start + (records.length - 1) * action.step;
+  if (last > 9999) throw new Error("BULK_QUEUE_RANGE");
+  await transaction.insert(gameStatusAssignments).values(records.map((record) => ({
+    gameId: record.id,
+    status: "BACKLOG" as const
+  }))).onConflictDoNothing();
+  const values = sql.join(records.map((record, index) => sql`(
+    ${record.id}::uuid,
+    ${action.start + index * action.step}::integer
+  )`), sql`, `);
+  await transaction.execute(sql`
+    WITH target(id, queue_order) AS (VALUES ${values})
+    UPDATE ${games} AS game
+    SET queue_order = target.queue_order,
+        play_status = COALESCE(game.play_status, 'BACKLOG'::game_play_status),
+        updated_at = NOW(),
+        version = game.version + 1
+    FROM target
+    WHERE game.id = target.id
+  `);
+}
+
+export async function bulkManageGames(
+  ownerUserId: string,
+  input: BulkInput,
+  requestId: string = randomUUID()
+) {
+  const result = await db.transaction(async (transaction) => {
+    const records = await resolveBulkSelection(transaction, ownerUserId, input.selection);
+    if (!records.length) throw new Error("BULK_SELECTION_EMPTY");
+    if (records.length > 1000) throw new Error("BULK_SELECTION_LIMIT");
+    const ids = records.map((record) => record.id);
+
+    if (input.action.type === "STATUSES") {
+      await applyBulkStatusAction(transaction, records, input.action);
+    } else if (input.action.type === "QUEUE") {
+      await applyBulkQueueAction(transaction, records, input.action);
+    } else if (input.action.type === "PLATFORM") {
+      const updated = await transaction.update(games).set({
+        platform: input.action.platform,
+        platformSource: "MANUAL",
+        updatedAt: new Date(),
+        version: sql`${games.version} + 1`
+      }).where(and(eq(games.ownerUserId, ownerUserId), isNull(games.deletedAt), inArray(games.id, ids))).returning();
+      await replacePrimaryReleaseEvents(transaction, updated);
+    } else {
+      const deleted = await transaction.update(games).set({
+        deletedAt: new Date(),
+        updatedAt: new Date(),
+        version: sql`${games.version} + 1`
+      }).where(and(eq(games.ownerUserId, ownerUserId), isNull(games.deletedAt), inArray(games.id, ids))).returning();
+      await replacePrimaryReleaseEvents(transaction, deleted);
+    }
+
+    await transaction.insert(auditLogs).values({
+      actorUserId: ownerUserId,
+      action: `game.bulk.${input.action.type.toLowerCase()}`,
+      entityType: "game_bulk",
+      entityId: null,
+      outcome: "SUCCESS",
+      requestId,
+      metadata: {
+        count: records.length,
+        selectionMode: input.selection.mode,
+        action: input.action,
+        sampleIds: ids.slice(0, 20)
+      }
+    });
+    return { updatedCount: records.length };
+  });
+  return result;
 }
 
 async function statusesFor(gameIds: string[]) {

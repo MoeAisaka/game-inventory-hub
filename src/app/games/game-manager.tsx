@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, type FormEvent } from "react";
-import { CalendarDays, Clock3, ListOrdered, Pencil, Plus, Star, Trash2, X } from "lucide-react";
+import { CalendarDays, CheckSquare2, Clock3, Layers3, ListOrdered, Pencil, Plus, Star, Trash2, X } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { GameCover } from "@/components/game-cover";
 import {
@@ -53,6 +53,13 @@ type GameView = {
   [key: string]: unknown;
 };
 
+type SelectionQuery = {
+  q: string;
+  status: GameStatus[];
+  platform: string[];
+  sort: "updated_desc" | "name_asc" | "release_asc" | "queue_asc";
+};
+
 const platformLabels: Record<string, string> = { STEAM: "Steam", PLAYSTATION: "PlayStation", NINTENDO_SWITCH: "Switch", NINTENDO_SWITCH_2: "Switch 2", XBOX_GAME_PASS: "XGP", PC_OTHER: "PC", IOS: "iOS" };
 const sourceLabels: Record<string, string> = {
   MANUAL: "手工维护",
@@ -91,18 +98,125 @@ async function api(path: string, init: RequestInit) {
   return body.data;
 }
 
-export function GameManager({ initialGames, total }: { initialGames: GameView[]; total: number }) {
+export function GameManager({ initialGames, total, selectionQuery }: { initialGames: GameView[]; total: number; selectionQuery: SelectionQuery }) {
   const router = useRouter();
   const [editing, setEditing] = useState<GameView | "new" | null>(null);
   const [formStatuses, setFormStatuses] = useState<GameStatus[]>(["BACKLOG"]);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState("");
+  const [messageTone, setMessageTone] = useState<"success" | "error">("error");
   const [minutes, setMinutes] = useState("");
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [selectAllFiltered, setSelectAllFiltered] = useState(false);
+  const [excludedIds, setExcludedIds] = useState<Set<string>>(new Set());
+  const [bulkOpen, setBulkOpen] = useState(false);
+  const [bulkAction, setBulkAction] = useState<"STATUSES" | "PLATFORM" | "QUEUE" | "DELETE">("STATUSES");
+  const [bulkStatusMode, setBulkStatusMode] = useState<"ADD" | "REMOVE" | "REPLACE">("ADD");
+  const [bulkStatuses, setBulkStatuses] = useState<GameStatus[]>([]);
+  const [bulkPlatform, setBulkPlatform] = useState("");
+  const [bulkQueueStart, setBulkQueueStart] = useState("1");
+  const [bulkQueueStep, setBulkQueueStep] = useState("1");
+  const pageIds = initialGames.map((game) => game.id);
+  const selectedCount = selectAllFiltered ? Math.max(0, total - excludedIds.size) : selectedIds.size;
+  const pageAllSelected = pageIds.length > 0 && pageIds.every((id) => selectAllFiltered ? !excludedIds.has(id) : selectedIds.has(id));
 
   function openEditor(game: GameView | "new") {
     setEditing(game);
     setFormStatuses(game === "new" ? ["BACKLOG"] : game.statuses ?? (game.playStatus ? [game.playStatus as GameStatus] : []));
     setMessage("");
+  }
+
+  function clearSelection() {
+    setSelectedIds(new Set());
+    setExcludedIds(new Set());
+    setSelectAllFiltered(false);
+    setBulkOpen(false);
+  }
+
+  function toggleSelected(id: string) {
+    if (selectAllFiltered) {
+      setExcludedIds((current) => {
+        const next = new Set(current);
+        if (next.has(id)) next.delete(id); else next.add(id);
+        return next;
+      });
+      return;
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleCurrentPage() {
+    if (selectAllFiltered) {
+      setExcludedIds((current) => {
+        const next = new Set(current);
+        for (const id of pageIds) {
+          if (pageAllSelected) next.add(id); else next.delete(id);
+        }
+        return next;
+      });
+      return;
+    }
+    setSelectedIds((current) => {
+      const next = new Set(current);
+      for (const id of pageIds) {
+        if (pageAllSelected) next.delete(id); else next.add(id);
+      }
+      return next;
+    });
+  }
+
+  function selectEveryFilteredGame() {
+    if (total > 1000) {
+      setMessageTone("error");
+      setMessage("单次最多批量操作 1000 款游戏，请先缩小筛选范围");
+      return;
+    }
+    setSelectAllFiltered(true);
+    setSelectedIds(new Set());
+    setExcludedIds(new Set());
+  }
+
+  function toggleBulkStatus(status: GameStatus) {
+    setBulkStatuses((current) => current.includes(status)
+      ? current.filter((value) => value !== status)
+      : gameStatusValues.filter((value) => current.includes(value) || value === status));
+  }
+
+  async function applyBulk(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedCount) return;
+    let action: Record<string, unknown>;
+    if (bulkAction === "STATUSES") {
+      if (!bulkStatuses.length) { setMessageTone("error"); setMessage("请至少选择一个状态"); return; }
+      action = { type: "STATUSES", mode: bulkStatusMode, statuses: bulkStatuses };
+    } else if (bulkAction === "PLATFORM") {
+      action = { type: "PLATFORM", platform: bulkPlatform === "__CLEAR__" ? null : bulkPlatform };
+    } else if (bulkAction === "QUEUE") {
+      const start = Number(bulkQueueStart); const step = Number(bulkQueueStep);
+      if (!Number.isInteger(start) || !Number.isInteger(step) || start < 1 || step < 1) { setMessageTone("error"); setMessage("待玩序号必须为正整数"); return; }
+      action = { type: "QUEUE", start, step };
+    } else {
+      if (!window.confirm(`确认删除已选择的 ${selectedCount} 款游戏？操作会写入审计日志，可通过数据库备份回档。`)) return;
+      action = { type: "DELETE" };
+    }
+    const selection = selectAllFiltered
+      ? { mode: "FILTER", query: selectionQuery, excludedIds: [...excludedIds], expectedTotal: total }
+      : { mode: "IDS", ids: [...selectedIds] };
+    setBusy(true); setMessage("");
+    try {
+      const result = await api("/api/v1/games/bulk", { method: "POST", body: JSON.stringify({ selection, action }) });
+      setMessageTone("success");
+      setMessage(`已完成 ${result.updatedCount} 款游戏的批量操作`);
+      clearSelection();
+      router.refresh();
+    } catch (error) {
+      setMessageTone("error");
+      setMessage(error instanceof Error ? error.message : "批量操作失败");
+    } finally { setBusy(false); }
   }
 
   function toggleStatus(status: GameStatus) {
@@ -113,7 +227,7 @@ export function GameManager({ initialGames, total }: { initialGames: GameView[];
 
   async function save(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setBusy(true); setMessage("");
+    setBusy(true); setMessage(""); setMessageTone("error");
     const form = new FormData(event.currentTarget);
     const communityRating = optionalNumber(form, "communityRating");
     const criticRating = optionalNumber(form, "criticRating");
@@ -146,7 +260,7 @@ export function GameManager({ initialGames, total }: { initialGames: GameView[];
 
   async function remove(game: GameView) {
     if (!window.confirm(`确认删除《${game.nameZh}》？可通过API恢复。`)) return;
-    setBusy(true);
+    setBusy(true); setMessageTone("error");
     try { await api(`/api/v1/games/${game.id}`, { method: "DELETE" }); router.refresh(); }
     catch (error) { setMessage(error instanceof Error ? error.message : "删除失败"); }
     finally { setBusy(false); }
@@ -154,8 +268,8 @@ export function GameManager({ initialGames, total }: { initialGames: GameView[];
 
   async function addTime(game: GameView) {
     const value = Number(minutes);
-    if (!Number.isInteger(value) || value <= 0) { setMessage("请输入正整数分钟数"); return; }
-    setBusy(true);
+    if (!Number.isInteger(value) || value <= 0) { setMessageTone("error"); setMessage("请输入正整数分钟数"); return; }
+    setBusy(true); setMessageTone("error");
     try {
       await api(`/api/v1/games/${game.id}/play-sessions`, { method: "POST", body: JSON.stringify({ minutes: value, startedAt: new Date().toISOString() }) });
       setMinutes(""); setEditing(null); router.refresh();
@@ -165,19 +279,41 @@ export function GameManager({ initialGames, total }: { initialGames: GameView[];
 
   return <>
     <section className="content-section game-list-section">
-      <div className="section-heading"><div><h2>游戏记录</h2><p>待玩队列按序号排序；评分、发售日与英文名均保留来源。</p></div><div className="heading-actions"><span className="count-badge">{total} 项</span><button className="primary-button compact" type="button" onClick={() => openEditor("new")}><Plus size={15} /> 添加游戏</button></div></div>
-      {message ? <div className="inline-alert error">{message}</div> : null}
-      {initialGames.length ? <div className="table-wrap"><table className="game-table"><thead><tr><th>游戏信息</th><th>状态</th><th>发售与评分</th><th>待玩队列</th><th>进度与时长</th><th>操作</th></tr></thead><tbody>
-        {initialGames.map((game) => <tr key={game.id}>
-          <td><div className="game-title-cell"><GameCover src={game.coverUrl} /><div><strong>{game.nameZh}</strong><small className={game.nameEn ? "" : "missing-field"}>{game.nameEn ?? "英文名待补全"}</small><span className="game-meta-line">{platformLabels[game.platform ?? ""] ?? game.platform ?? "未设置平台"}</span></div></div></td>
+      <div className="section-heading"><div><h2>游戏记录</h2><p>待玩队列按序号排序；评分、发售日与英文名均保留来源。</p></div><div className="heading-actions"><span className="count-badge">{total} 项</span>{initialGames.length ? <button className="secondary-button compact" type="button" onClick={toggleCurrentPage}><CheckSquare2 size={15} />{pageAllSelected ? "取消本页" : "选择本页"}</button> : null}<button className="primary-button compact" type="button" onClick={() => openEditor("new")}><Plus size={15} /> 添加游戏</button></div></div>
+      {message ? <div className={`inline-alert ${messageTone === "error" ? "error" : ""}`}>{message}</div> : null}
+      {selectedCount ? <div className="bulk-toolbar" aria-live="polite"><div><Layers3 size={17} /><strong>已选择 {selectedCount} 款</strong>{!selectAllFiltered && total > selectedCount ? <button type="button" className="text-button" onClick={selectEveryFilteredGame}>选择全部 {total} 项筛选结果</button> : selectAllFiltered ? <span>已覆盖当前全部筛选结果</span> : null}</div><div><button type="button" className="text-button" onClick={clearSelection}>取消选择</button><button type="button" className="primary-button compact" onClick={() => setBulkOpen(true)}>批量管理</button></div></div> : null}
+      {initialGames.length ? <div className="table-wrap"><table className="game-table"><thead><tr><th><label className="selection-check"><input type="checkbox" checked={pageAllSelected} onChange={toggleCurrentPage} /><span>游戏信息</span></label></th><th>状态</th><th>发售与评分</th><th>待玩队列</th><th>进度与时长</th><th>操作</th></tr></thead><tbody>
+        {initialGames.map((game) => {
+          const selected = selectAllFiltered ? !excludedIds.has(game.id) : selectedIds.has(game.id);
+          return <tr key={game.id} className={selected ? "selected-row" : ""}>
+          <td><div className="game-title-select"><label className="selection-check item-check"><input type="checkbox" checked={selected} onChange={() => toggleSelected(game.id)} aria-label={`选择《${game.nameZh}》`} /></label><div className="game-title-cell"><GameCover src={game.coverUrl} /><div><strong>{game.nameZh}</strong><small className={game.nameEn ? "" : "missing-field"}>{game.nameEn ?? "英文名待补全"}</small><span className="game-meta-line">{platformLabels[game.platform ?? ""] ?? game.platform ?? "未设置平台"}</span></div></div></div></td>
           <td><div className="status-chip-list">{game.statuses.length ? game.statuses.map((status) => <span key={status} className={`status-chip status-${status.toLowerCase()}`}>{gameStatusLabels[status]}</span>) : <span className="status-chip status-unset">未设置</span>}<span className={`status-chip activity-${game.activityState.toLowerCase()}`}>{activityStateLabels[game.activityState]}</span><span className={`status-chip purchase-${game.purchaseState.toLowerCase()}`}>{purchaseStateLabels[game.purchaseState]}</span></div><small className="cell-note">开始：{game.startedAt ?? game.firstObservedPlayedAt?.slice(0, 10) ?? "待记录"} · 最后：{game.lastPlayedAt?.slice(0, 10) ?? "—"}</small>{game.activityState === "COMPLETION_CANDIDATE" ? <small className="cell-note">超过 48 小时未增加时长，仅标记为待确认，不覆盖人工通关状态。</small> : null}</td>
           <td><div className="release-rating-cell"><span><CalendarDays size={13} /><strong>{game.releaseDate ?? "发售日待补全"}</strong><small>{sourceLabels[game.releaseDateSource] ?? game.releaseDateSource}</small></span><div className="rating-row">{game.communityRating !== null ? <em><Star size={11} />玩家 {score(game.communityRating)}</em> : null}{game.criticRating !== null ? <em>媒体 {score(game.criticRating)}</em> : null}{game.ratingSource ? <span className="rating-source">{sourceLabels[game.ratingSource] ?? game.ratingSource}</span> : null}{game.communityRating === null && game.criticRating === null ? <small>评分待补全</small> : null}</div></div></td>
           <td>{game.statuses.includes("BACKLOG") ? <div className={game.queueOrder ? "queue-position" : "queue-position empty"}><ListOrdered size={14} /><strong>{game.queueOrder ? `#${game.queueOrder}` : "未排队"}</strong></div> : <span className="cell-muted">—</span>}</td>
           <td><div className="progress-time-cell"><div><strong>{game.progressPercent === null ? "—" : `${game.progressPercent}%`}</strong><span className="progress-track"><i style={{ width: `${game.progressPercent ?? 0}%` }} /></span></div><small>已玩 {hours(game.totalPlaytimeMinutes)} · 主线预估 {hours(game.estimatedNormallyMinutes)}</small><small>{game.acquisitionSources.length ? `入库：${game.acquisitionSources.map((source) => sourceLabels[source] ?? source).join("、")}` : "尚无入库记录"}</small></div></td>
           <td><div className="row-actions"><button aria-label="编辑" onClick={() => openEditor(game)}><Pencil size={14} /></button><button aria-label="删除" disabled={busy} onClick={() => remove(game)}><Trash2 size={14} /></button></div></td>
-        </tr>)}
+        </tr>;})}
       </tbody></table></div> : <div className="empty-state">没有符合条件的游戏。可清除筛选或添加新记录。</div>}
     </section>
+    {bulkOpen ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget && !busy) setBulkOpen(false); }}>
+      <div className="modal-panel bulk-modal" role="dialog" aria-modal="true" aria-labelledby="bulk-form-title">
+        <header><div><span className="eyebrow">BULK MANAGEMENT</span><h2 id="bulk-form-title">批量管理 {selectedCount} 款游戏</h2><p>所有变更在同一事务内完成；失败时整批回滚。</p></div><button className="icon-button" disabled={busy} onClick={() => setBulkOpen(false)} aria-label="关闭"><X size={18} /></button></header>
+        <form onSubmit={applyBulk}>
+          <fieldset className="game-form-section"><legend>选择操作</legend><div className="bulk-action-tabs" role="group" aria-label="批量操作类型">
+            <button type="button" className={bulkAction === "STATUSES" ? "selected" : ""} onClick={() => setBulkAction("STATUSES")}>状态</button>
+            <button type="button" className={bulkAction === "PLATFORM" ? "selected" : ""} onClick={() => setBulkAction("PLATFORM")}>平台</button>
+            <button type="button" className={bulkAction === "QUEUE" ? "selected" : ""} onClick={() => setBulkAction("QUEUE")}>待玩序号</button>
+            <button type="button" className={bulkAction === "DELETE" ? "selected danger" : "danger"} onClick={() => setBulkAction("DELETE")}>删除</button>
+          </div></fieldset>
+          {bulkAction === "STATUSES" ? <fieldset className="game-form-section"><legend>批量调整状态</legend><p>新增/移除会保留其他状态；替换会以本次选择为准。</p><div className="form-grid"><label>处理方式<select value={bulkStatusMode} onChange={(event) => setBulkStatusMode(event.target.value as typeof bulkStatusMode)}><option value="ADD">新增状态</option><option value="REMOVE">移除状态</option><option value="REPLACE">替换全部状态</option></select></label></div><div className="status-multiselect" role="group" aria-label="批量状态">{gameStatusValues.map((status) => <label key={status} className={bulkStatuses.includes(status) ? "selected" : ""}><input type="checkbox" checked={bulkStatuses.includes(status)} onChange={() => toggleBulkStatus(status)} /><span>{gameStatusLabels[status]}</span></label>)}</div></fieldset> : null}
+          {bulkAction === "PLATFORM" ? <fieldset className="game-form-section"><legend>批量设置平台</legend><p>会同步更新发售事件中的平台信息。</p><div className="form-grid"><label>目标平台<select required value={bulkPlatform} onChange={(event) => setBulkPlatform(event.target.value)}><option value="" disabled>请选择</option><option value="STEAM">Steam</option><option value="PLAYSTATION">PlayStation</option><option value="NINTENDO_SWITCH">Switch</option><option value="NINTENDO_SWITCH_2">Switch 2</option><option value="XBOX_GAME_PASS">XGP</option><option value="PC_OTHER">PC</option><option value="IOS">iOS</option><option value="__CLEAR__">清空平台</option></select></label></div></fieldset> : null}
+          {bulkAction === "QUEUE" ? <fieldset className="game-form-section"><legend>生成待玩序号</legend><p>按当前列表排序依次编号，并自动加入“待玩”状态。</p><div className="form-grid"><label>起始序号<input type="number" min="1" max="9999" value={bulkQueueStart} onChange={(event) => setBulkQueueStart(event.target.value)} /></label><label>递增步长<input type="number" min="1" max="9999" value={bulkQueueStep} onChange={(event) => setBulkQueueStep(event.target.value)} /></label></div></fieldset> : null}
+          {bulkAction === "DELETE" ? <div className="bulk-danger-panel"><Trash2 size={20} /><div><strong>软删除 {selectedCount} 款游戏</strong><p>这些游戏会从当前列表移除。提交前还会再次确认。</p></div></div> : null}
+          {message ? <div className={`inline-alert ${messageTone === "error" ? "error" : ""}`}>{message}</div> : null}
+          <footer><button type="button" className="secondary-button" disabled={busy} onClick={() => setBulkOpen(false)}>取消</button><button className={bulkAction === "DELETE" ? "danger-button" : "primary-button"} disabled={busy}>{busy ? "处理中…" : `应用到 ${selectedCount} 款`}</button></footer>
+        </form>
+      </div>
+    </div> : null}
     {editing ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditing(null); }}>
       <div className="modal-panel game-form-modal" role="dialog" aria-modal="true" aria-labelledby="game-form-title">
         <header><div><span className="eyebrow">{editing === "new" ? "NEW GAME" : "EDIT GAME"}</span><h2 id="game-form-title">{editing === "new" ? "添加游戏" : editing.nameZh}</h2><p>字段按信息、评价、游玩和备注分组；自动数据可以手工覆盖。</p></div><button className="icon-button" onClick={() => setEditing(null)} aria-label="关闭"><X size={18} /></button></header>

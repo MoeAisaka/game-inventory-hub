@@ -43,7 +43,7 @@ import { commitMigrationBatch } from "@/server/migration/commit";
 import { createImportBatch, createImportBatchSchema } from "@/server/services/imports";
 import { registerFileBlob, registerFileBlobSchema } from "@/server/services/attachments";
 import { rollbackMigrationBatch, runMigrationDryRun } from "@/server/migration/service";
-import { createGame, gameQuerySchema, listGames, updateGame } from "@/server/services/games";
+import { bulkManageGames, createGame, gameQuerySchema, getGame, listGames, updateGame } from "@/server/services/games";
 import { addInventoryMovement, createInventoryItem, updateInventoryItem } from "@/server/services/inventory";
 import { getDashboardFilters, saveDashboardFilters } from "@/server/services/preferences";
 import { saveSteamAccount } from "@/server/integrations/accounts";
@@ -378,6 +378,54 @@ describe("Phase 1 foundation", () => {
     expect(result.games.map((game) => game.id).sort()).toEqual([steam.id, playstation.id].sort());
     expect(gameQuerySchema.parse({ platform: "STEAM" }).platform).toEqual(["STEAM"]);
     expect(gameQuerySchema.parse({ platform: "STEAM,PLAYSTATION" }).platform).toEqual(["STEAM", "PLAYSTATION"]);
+  });
+
+  it("bulk-manages explicit and filtered game selections atomically", async () => {
+    const marker = `批量管理回归-${randomUUID()}`;
+    const first = await createGame(userId, { nameZh: `${marker}-A`, platform: "STEAM", statuses: ["UNPLANNED"] }, randomUUID());
+    const second = await createGame(userId, { nameZh: `${marker}-B`, platform: "PLAYSTATION", statuses: ["UNPLANNED"] }, randomUUID());
+    const third = await createGame(userId, { nameZh: `${marker}-C`, platform: "NINTENDO_SWITCH", statuses: ["UNPLANNED"] }, randomUUID());
+
+    expect(await bulkManageGames(userId, {
+      selection: { mode: "IDS", ids: [first.id, second.id] },
+      action: { type: "STATUSES", mode: "ADD", statuses: ["TO_BUY"] }
+    }, randomUUID())).toEqual({ updatedCount: 2 });
+    expect((await getGame(userId, first.id))?.statuses).toEqual(expect.arrayContaining(["UNPLANNED", "TO_BUY"]));
+    expect((await getGame(userId, third.id))?.statuses).toEqual(["UNPLANNED"]);
+
+    const query = gameQuerySchema.parse({ q: marker, sort: "name_asc" });
+    expect(await bulkManageGames(userId, {
+      selection: {
+        mode: "FILTER",
+        query: { q: query.q, status: query.status, platform: query.platform, sort: query.sort },
+        excludedIds: [],
+        expectedTotal: 3
+      },
+      action: { type: "QUEUE", start: 10, step: 2 }
+    }, randomUUID())).toEqual({ updatedCount: 3 });
+    const queued = await listGames(userId, gameQuerySchema.parse({ q: marker, sort: "name_asc" }));
+    expect(queued.games.map((game) => game.queueOrder)).toEqual([10, 12, 14]);
+    expect(queued.games.every((game) => game.statuses.includes("BACKLOG"))).toBe(true);
+
+    await expect(bulkManageGames(userId, {
+      selection: {
+        mode: "FILTER",
+        query: { q: query.q, status: query.status, platform: query.platform, sort: query.sort },
+        excludedIds: [],
+        expectedTotal: 2
+      },
+      action: { type: "PLATFORM", platform: "PC_OTHER" }
+    }, randomUUID())).rejects.toThrow("BULK_SELECTION_STALE");
+    expect((await getGame(userId, first.id))?.platform).toBe("STEAM");
+
+    expect(await bulkManageGames(userId, {
+      selection: { mode: "IDS", ids: [third.id] },
+      action: { type: "DELETE" }
+    }, randomUUID())).toEqual({ updatedCount: 1 });
+    expect(await getGame(userId, third.id)).toBeNull();
+    expect(await getGame(userId, third.id, true)).not.toBeNull();
+    const audits = await db.select().from(auditLogs).where(eq(auditLogs.action, "game.bulk.delete"));
+    expect(audits.at(-1)?.metadata).toMatchObject({ count: 1, selectionMode: "IDS" });
   });
 
   it("preserves inventory conservation and blocks negative stock", async () => {
