@@ -1,11 +1,11 @@
-import { desc, eq } from "drizzle-orm";
+import { count, desc, eq } from "drizzle-orm";
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { formatShanghaiDateTime } from "@/lib/date-format";
 import { env } from "@/lib/env";
 import { currentSession } from "@/server/auth/current";
 import { db } from "@/server/db";
-import { externalAccounts, syncJobs } from "@/server/db/schema";
+import { externalAccounts, platformLibraryItems, syncJobs } from "@/server/db/schema";
 import { steamLibraryOverview } from "@/server/integrations/steam-library";
 import { SteamMatchReview } from "./steam-match-review";
 import { SyncControl } from "./sync-control";
@@ -15,16 +15,17 @@ export const dynamic = "force-dynamic";
 export default async function SyncPage() {
   const session = await currentSession();
   if (!session) redirect("/login");
-  const [accounts, jobs, library] = await Promise.all([
+  const [accounts, jobs, library, platformCounts] = await Promise.all([
     db.select().from(externalAccounts).where(eq(externalAccounts.ownerUserId, session.userId)),
     db.select().from(syncJobs).where(eq(syncJobs.ownerUserId, session.userId)).orderBy(desc(syncJobs.createdAt)).limit(20),
-    steamLibraryOverview(session.userId)
+    steamLibraryOverview(session.userId),
+    db.select({ provider: platformLibraryItems.provider, value: count() }).from(platformLibraryItems).where(eq(platformLibraryItems.ownerUserId, session.userId)).groupBy(platformLibraryItems.provider)
   ]);
   const steam = accounts.find((account) => account.provider === "STEAM");
   const config = env();
   return <AppShell username={session.username} active="/sync">
     <header className="page-header"><div><span className="eyebrow">EXTERNAL DATA</span><h1>平台与元数据同步</h1><p>外部数据只更新平台字段；手工修正具有最高优先级。</p></div></header>
-    <SyncControl steamAccount={steam ? { steamId: steam.externalUserId, displayName: steam.displayName, status: steam.status, lastSyncedAt: steam.lastSyncedAt?.toISOString() ?? null } : null} steamReady={Boolean(config.STEAM_WEB_API_KEY)} igdbReady={Boolean(config.IGDB_CLIENT_ID && config.IGDB_CLIENT_SECRET)} />
+    <SyncControl steamAccount={steam ? { steamId: steam.externalUserId, displayName: steam.displayName, status: steam.status, lastSyncedAt: steam.lastSyncedAt?.toISOString() ?? null } : null} steamReady={Boolean(config.STEAM_WEB_API_KEY)} igdbReady={Boolean(config.IGDB_CLIENT_ID && config.IGDB_CLIENT_SECRET)} platformCounts={{ playstation: platformCounts.find((item) => item.provider === "PLAYSTATION")?.value ?? 0, nintendo: platformCounts.find((item) => item.provider === "NINTENDO")?.value ?? 0 }} />
     <SteamMatchReview
       summary={library.summary}
       items={library.unresolved.map((item) => ({

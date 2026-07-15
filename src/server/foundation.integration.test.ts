@@ -5,6 +5,7 @@ import { count, eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { login } from "@/server/auth/login";
 import { deriveActivityState } from "@/lib/game-insights";
+import { splitProductNameAndPurchaseUrl } from "@/lib/purchase-link";
 import { hashPassword, verifyPassword } from "@/server/auth/password";
 import { hashSessionToken, newSessionToken } from "@/server/auth/session";
 import { closeDatabase, db } from "@/server/db";
@@ -31,6 +32,7 @@ import {
   importRows,
   inventoryItems,
   inventoryMovements,
+  platformLibraryItems,
   sessions,
   steamLibraryItems,
   syncJobs,
@@ -42,21 +44,23 @@ import { createImportBatch, createImportBatchSchema } from "@/server/services/im
 import { registerFileBlob, registerFileBlobSchema } from "@/server/services/attachments";
 import { rollbackMigrationBatch, runMigrationDryRun } from "@/server/migration/service";
 import { createGame, gameQuerySchema, listGames, updateGame } from "@/server/services/games";
-import { addInventoryMovement, createInventoryItem } from "@/server/services/inventory";
+import { addInventoryMovement, createInventoryItem, updateInventoryItem } from "@/server/services/inventory";
 import { getDashboardFilters, saveDashboardFilters } from "@/server/services/preferences";
 import { saveSteamAccount } from "@/server/integrations/accounts";
 import { resolveSteamLibraryItem } from "@/server/integrations/steam-library";
 import { fetchSteamOwnedGames, normalizeSteamTitle, syncSteamOwnedGames, uniqueSteamNameCandidate } from "@/server/integrations/steam";
 import { fetchSteamStoreMetadata } from "@/server/integrations/steam-store";
-import { uniqueExactIgdbCandidate } from "@/server/integrations/igdb";
+import { canonicalEnglishName, uniqueExactIgdbCandidate } from "@/server/integrations/igdb";
+import { ingestPlatformSnapshot } from "@/server/integrations/platform-snapshot";
 
-const password = "not-a-real-secret";
+const password = "test-password-that-is-long"; // secret-scan: allow
 let userId = "";
-const realSource = resolve("tests/fixtures/import.xlsx");
+const realSource = resolve(".source-readonly/游戏清单+折腾清单_已修正.xlsx");
 
 beforeAll(async () => {
   await db.delete(userPreferences);
   await db.delete(steamLibraryItems);
+  await db.delete(platformLibraryItems);
   await db.delete(syncJobs);
   await db.delete(externalGameMappings);
   await db.delete(externalAccounts);
@@ -91,6 +95,11 @@ afterAll(async () => {
 });
 
 describe("Phase 1 foundation", () => {
+  it("accepts an IGDB Latin title even when the local primary title already uses the same spelling", () => {
+    expect(canonicalEnglishName("Noctuary")).toBe("Noctuary");
+    expect(canonicalEnglishName("梦灯花")).toBeNull();
+  });
+
   it("keeps the 48-hour rule as an inferred completion candidate instead of overwriting confirmed status", () => {
     const now = new Date("2026-07-14T08:00:00Z");
     expect(deriveActivityState({
@@ -397,6 +406,54 @@ describe("Phase 1 foundation", () => {
     expect(negative && "negative" in negative && negative.negative).toBe(true);
   });
 
+  it("extracts a trailing purchase URL and supports audited inventory edits", async () => {
+    expect(splitProductNameAndPurchaseUrl("测试商品 https://detail.1688.com/offer/123.html")).toEqual({
+      productName: "测试商品",
+      purchaseUrl: "https://detail.1688.com/offer/123.html",
+      extracted: true
+    });
+    expect(splitProductNameAndPurchaseUrl("https://example.com/only-url").extracted).toBe(false);
+    const item = await createInventoryItem(userId, {
+      productName: "购买链接回归 https://detail.1688.com/offer/456.html",
+      color: "灰色",
+      unopenedQuantity: 0,
+      openedQuantity: 0
+    }, randomUUID());
+    expect(item).toMatchObject({ productName: "购买链接回归", purchaseUrl: "https://detail.1688.com/offer/456.html" });
+    const updated = await updateInventoryItem(userId, item.id, {
+      productName: item.productName,
+      purchaseUrl: "https://example.com/product/456",
+      color: item.color,
+      brand: null,
+      style: null,
+      material: null,
+      unitPrice: null,
+      currentLocation: null,
+      notes: null,
+      version: item.version
+    }, randomUUID());
+    if (!updated || !("item" in updated) || !updated.item) throw new Error("库存编辑回归未返回更新记录");
+    expect(updated.item.purchaseUrl).toBe("https://example.com/product/456");
+  });
+
+  it("ingests PlayStation and Nintendo snapshots into an isolated read-only staging model", async () => {
+    const local = await createGame(userId, { nameZh: "平台快照精确匹配", nameEn: "Platform Snapshot Match" }, randomUUID());
+    const playstation = await ingestPlatformSnapshot(userId, {
+      provider: "PLAYSTATION",
+      externalUserId: "psn-regression-user",
+      displayName: "Regression",
+      items: [{ externalGameId: "PPSA-REGRESSION", name: "Platform Snapshot Match", platform: "PS5", playtimeMinutes: 120, isOwned: true, rawMetadata: { trophies: 3 } }]
+    }, `psn-snapshot-${randomUUID()}`, randomUUID());
+    expect(playstation).toMatchObject({ reused: false, matched: 1, unresolved: 0 });
+    expect((await db.select().from(platformLibraryItems).where(eq(platformLibraryItems.externalGameId, "PPSA-REGRESSION")))[0]).toMatchObject({ provider: "PLAYSTATION", matchStatus: "MATCHED", matchedGameId: local.id, playtimeMinutes: 120 });
+    const nintendo = await ingestPlatformSnapshot(userId, {
+      provider: "NINTENDO",
+      externalUserId: "nintendo-regression-user",
+      items: [{ externalGameId: "NSUID-REGRESSION", name: "未匹配任天堂游戏", platform: "Nintendo Switch 2", playtimeMinutes: 0, isOwned: true, rawMetadata: {} }]
+    }, `nintendo-snapshot-${randomUUID()}`, randomUUID());
+    expect(nintendo).toMatchObject({ reused: false, matched: 0, unresolved: 1 });
+  });
+
   it("parses the official Steam owned-games response without exposing credentials", async () => {
     const fakeFetch: typeof fetch = async () => new Response(JSON.stringify({
       response: { game_count: 1, games: [{ appid: 620, name: "Portal 2", playtime_forever: 321 }] }
@@ -474,7 +531,7 @@ describe("Phase 1 foundation", () => {
       }
     }), { status: 200, headers: { "content-type": "application/json" } });
     const synced = await syncSteamOwnedGames(userId, `steam-regression-${randomUUID()}`, {
-      apiKey: "not-a-real-secret",
+      apiKey: "server-only-test-key", // secret-scan: allow
       fetcher: fakeFetch
     });
     expect(synced).toMatchObject({ processed: 3, matched: 1, unmatched: 2, created: 0 });
@@ -498,7 +555,7 @@ describe("Phase 1 foundation", () => {
     expect(mappings.map((mapping) => mapping.externalGameId).sort()).toEqual([String(exactAppId), String(relatedAppId)].sort());
 
     const resynced = await syncSteamOwnedGames(userId, `steam-regression-${randomUUID()}`, {
-      apiKey: "not-a-real-secret",
+      apiKey: "server-only-test-key", // secret-scan: allow
       fetcher: fakeFetch
     });
     expect(resynced).toMatchObject({ processed: 3, matched: 2, unmatched: 1, created: 0 });

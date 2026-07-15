@@ -53,6 +53,7 @@ const assetPayload = z.object({
 
 const inventoryPayload = z.object({
   productName: z.string().min(1).max(300),
+  purchaseUrl: nullableText,
   priorityCode: nullableText,
   brand: nullableText,
   style: nullableText,
@@ -188,6 +189,7 @@ export async function commitMigrationBatch(
       const [item] = await transaction.insert(inventoryItems).values({
         ownerUserId: actorUserId,
         productName: payload.productName,
+        purchaseUrl: payload.purchaseUrl,
         priorityCode: payload.priorityCode,
         brand: payload.brand,
         style: payload.style,

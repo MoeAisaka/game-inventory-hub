@@ -2,8 +2,8 @@
 
 import { useState, type FormEvent } from "react";
 import { CalendarDays, Clock3, ListOrdered, Pencil, Plus, Star, Trash2, X } from "lucide-react";
-import Image from "next/image";
 import { useRouter } from "next/navigation";
+import { GameCover } from "@/components/game-cover";
 import {
   activityStateLabels,
   purchaseStateLabels,
@@ -169,7 +169,7 @@ export function GameManager({ initialGames, total }: { initialGames: GameView[];
       {message ? <div className="inline-alert error">{message}</div> : null}
       {initialGames.length ? <div className="table-wrap"><table className="game-table"><thead><tr><th>游戏信息</th><th>状态</th><th>发售与评分</th><th>待玩队列</th><th>进度与时长</th><th>操作</th></tr></thead><tbody>
         {initialGames.map((game) => <tr key={game.id}>
-          <td><div className="game-title-cell">{game.coverUrl ? <Image src={game.coverUrl} alt="" width={40} height={56} unoptimized /> : <span className="cover-placeholder" />}<div><strong>{game.nameZh}</strong><small className={game.nameEn ? "" : "missing-field"}>{game.nameEn ?? "英文名待补全"}</small><span className="game-meta-line">{platformLabels[game.platform ?? ""] ?? game.platform ?? "未设置平台"}</span></div></div></td>
+          <td><div className="game-title-cell"><GameCover src={game.coverUrl} /><div><strong>{game.nameZh}</strong><small className={game.nameEn ? "" : "missing-field"}>{game.nameEn ?? "英文名待补全"}</small><span className="game-meta-line">{platformLabels[game.platform ?? ""] ?? game.platform ?? "未设置平台"}</span></div></div></td>
           <td><div className="status-chip-list">{game.statuses.length ? game.statuses.map((status) => <span key={status} className={`status-chip status-${status.toLowerCase()}`}>{gameStatusLabels[status]}</span>) : <span className="status-chip status-unset">未设置</span>}<span className={`status-chip activity-${game.activityState.toLowerCase()}`}>{activityStateLabels[game.activityState]}</span><span className={`status-chip purchase-${game.purchaseState.toLowerCase()}`}>{purchaseStateLabels[game.purchaseState]}</span></div><small className="cell-note">开始：{game.startedAt ?? game.firstObservedPlayedAt?.slice(0, 10) ?? "待记录"} · 最后：{game.lastPlayedAt?.slice(0, 10) ?? "—"}</small>{game.activityState === "COMPLETION_CANDIDATE" ? <small className="cell-note">超过 48 小时未增加时长，仅标记为待确认，不覆盖人工通关状态。</small> : null}</td>
           <td><div className="release-rating-cell"><span><CalendarDays size={13} /><strong>{game.releaseDate ?? "发售日待补全"}</strong><small>{sourceLabels[game.releaseDateSource] ?? game.releaseDateSource}</small></span><div className="rating-row">{game.communityRating !== null ? <em><Star size={11} />玩家 {score(game.communityRating)}</em> : null}{game.criticRating !== null ? <em>媒体 {score(game.criticRating)}</em> : null}{game.ratingSource ? <span className="rating-source">{sourceLabels[game.ratingSource] ?? game.ratingSource}</span> : null}{game.communityRating === null && game.criticRating === null ? <small>评分待补全</small> : null}</div></div></td>
           <td>{game.statuses.includes("BACKLOG") ? <div className={game.queueOrder ? "queue-position" : "queue-position empty"}><ListOrdered size={14} /><strong>{game.queueOrder ? `#${game.queueOrder}` : "未排队"}</strong></div> : <span className="cell-muted">—</span>}</td>
