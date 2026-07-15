@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.14.0 - 2026-07-15
+
+- Add page-level selection and filtered-result selection for game records.
+- Add atomic bulk status, platform, queue-order, and soft-delete operations.
+- Reject stale filtered selections with an `expectedTotal` conflict check.
+- Limit each bulk operation to 1,000 games and queue positions to the supported range.
+- Record one aggregate audit event per bulk request instead of one event per game.
+- Add regression coverage for explicit selection, filtered selection, rollback, soft delete, and audit metadata.
+- Keep production records, hostnames, backup paths, deployment scripts, and browser artifacts out of the community release.
+
 ## 0.13.1 - 2026-07-15
 
 - Add isolated PlayStation and Nintendo read-only Sidecars.

@@ -25,7 +25,7 @@ jobs:
       PGDATABASE: game_inventory
       SESSION_COOKIE_SECURE: "false"
       APP_ORIGIN: http://127.0.0.1:3000
-      APP_VERSION: 0.13.1
+      APP_VERSION: 0.14.0
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020

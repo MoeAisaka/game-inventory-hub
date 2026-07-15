@@ -8,6 +8,8 @@ A self-hosted dashboard for a personal game library and physical/digital invento
 - Manual-first metadata precedence with optional Steam and IGDB synchronization
 - Play sessions and conservative status inference
 - Numbered backlog ordering for easy insertion and reprioritization
+- Page-level and filtered-result selection for bulk management
+- Atomic bulk status, platform, queue-order, and soft-delete operations with stale-snapshot protection
 - Inventory items and append-only stock movements
 - Preview, commit, rollback, and audit trails for spreadsheet imports
 - Isolated read-only PlayStation and Nintendo Sidecars that emit normalized snapshots
@@ -71,4 +73,4 @@ Run behind an HTTPS reverse proxy. Keep PostgreSQL private, set `SESSION_COOKIE_
 
 ## Status
 
-Community edition `0.13.1`. Connectors are optional and disabled when credentials are absent. The repository contains no production database, account identifier, imported library, API credential, deployment hostname, or private Sidecar state.
+Community edition `0.14.0`. Connectors are optional and disabled when credentials are absent. The repository contains no production database, account identifier, imported library, API credential, deployment hostname, or private Sidecar state.
