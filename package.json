@@ -57,7 +57,7 @@
     "@types/react-dom": "latest",
     "drizzle-kit": "0.31.10",
     "esbuild": "0.28.1",
-    "eslint": "9.39.5",
+    "eslint": "10.7.0",
     "eslint-config-next": "16.2.10",
     "tsx": "4.23.0",
     "typescript": "6.0.3",
