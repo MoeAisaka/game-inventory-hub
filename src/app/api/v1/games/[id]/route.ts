@@ -35,7 +35,7 @@ export async function PATCH(request: NextRequest, context: { params: Promise<{ i
       return apiError("INVALID_REQUEST", "完成日期不能早于开始日期", 400, id, { field: "completedAt" });
     }
     if (error instanceof Error && error.message === "GAME_QUEUE_STATUS") {
-      return apiError("INVALID_REQUEST", "设置待玩顺序时必须同时选择“待玩”状态", 400, id, { field: "queueOrder" });
+      return apiError("INVALID_REQUEST", "设置顺序时必须同时选择“接下来玩”状态", 400, id, { field: "queueOrder" });
     }
     return apiError("INTERNAL_ERROR", "更新游戏失败", 500, id);
   }

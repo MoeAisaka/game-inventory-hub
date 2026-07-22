@@ -1,4 +1,4 @@
-import { and, desc, eq, isNull } from "drizzle-orm";
+import { and, desc, eq, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { env } from "@/lib/env";
 import { db } from "@/server/db";
@@ -14,7 +14,11 @@ import {
 
 const appDetailsData = z.object({
   name: z.string().min(1),
+  short_description: z.string().optional(),
   header_image: z.string().url().optional(),
+  developers: z.array(z.string().min(1)).optional(),
+  publishers: z.array(z.string().min(1)).optional(),
+  genres: z.array(z.object({ id: z.string().optional(), description: z.string().min(1) })).optional(),
   release_date: z.object({ coming_soon: z.boolean().optional(), date: z.string().optional() }).optional(),
   metacritic: z.object({ score: z.number().min(0).max(100), url: z.string().url().optional() }).optional()
 });
@@ -46,7 +50,7 @@ async function jsonRequest(url: URL, fetcher: Fetcher) {
   let response: Response;
   try {
     response = await fetcher(url, {
-      headers: { "user-agent": "GameInventoryHub/0.13.1" },
+      headers: { "user-agent": "GameInventory/0.34.0 (+https://games.example.invalid)" },
       signal: AbortSignal.timeout(env().EXTERNAL_REQUEST_TIMEOUT_MS)
     });
   } catch {
@@ -70,7 +74,11 @@ function containsCjk(value: string) {
   return /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value);
 }
 
-export async function fetchSteamStoreMetadata(appId: number, fetcher: Fetcher = fetch) {
+export async function fetchSteamStoreMetadata(
+  appId: number,
+  fetcher: Fetcher = fetch,
+  options: { includeReviews?: boolean } = {}
+) {
   const detailsUrl = (language: string) => {
     const url = new URL("https://store.steampowered.com/api/appdetails");
     url.searchParams.set("appids", String(appId));
@@ -84,32 +92,38 @@ export async function fetchSteamStoreMetadata(appId: number, fetcher: Fetcher = 
   reviewsUrl.searchParams.set("purchase_type", "all");
   reviewsUrl.searchParams.set("num_per_page", "0");
   const [zhRaw, enRaw, reviewsRaw] = await Promise.all([
-    jsonRequest(detailsUrl("schinese"), fetcher),
-    jsonRequest(detailsUrl("english"), fetcher),
-    jsonRequest(reviewsUrl, fetcher)
+    jsonRequest(detailsUrl("schinese"), fetcher).catch(() => null),
+    jsonRequest(detailsUrl("english"), fetcher).catch(() => null),
+    options.includeReviews === false ? Promise.resolve(null) : jsonRequest(reviewsUrl, fetcher).catch(() => null)
   ]);
   const zh = appDetailsResponse.safeParse(zhRaw);
   const en = appDetailsResponse.safeParse(enRaw);
   const reviews = reviewResponse.safeParse(reviewsRaw);
-  if (!zh.success || !en.success || !reviews.success) throw new SteamStoreConnectorError("UPSTREAM_FAILED");
-  const zhData = zh.data[String(appId)]?.success ? zh.data[String(appId)]?.data : undefined;
-  const enData = en.data[String(appId)]?.success ? en.data[String(appId)]?.data : undefined;
+  const zhData = zh.success && zh.data[String(appId)]?.success ? zh.data[String(appId)]?.data : undefined;
+  const enData = en.success && en.data[String(appId)]?.success ? en.data[String(appId)]?.data : undefined;
   if (!zhData && !enData) throw new SteamStoreConnectorError("UPSTREAM_FAILED");
   const details = enData ?? zhData!;
-  const totalReviews = reviews.data.query_summary.total_reviews;
-  const positiveRate = totalReviews
-    ? Math.round((reviews.data.query_summary.total_positive / totalReviews) * 10_000) / 100
+  const reviewSummary = reviews.success ? reviews.data.query_summary : null;
+  const totalReviews = reviewSummary?.total_reviews ?? 0;
+  const positiveRate = reviewSummary && totalReviews
+    ? Math.round((reviewSummary.total_positive / totalReviews) * 10_000) / 100
     : null;
   return {
     appId,
     nameZh: zhData?.name ?? null,
     nameEn: enData?.name ?? details.name,
+    summaryZh: zhData?.short_description?.trim() || null,
+    summaryEn: enData?.short_description?.trim() || details.short_description?.trim() || null,
     coverUrl: details.header_image ?? zhData?.header_image ?? null,
+    developers: [...new Set([...(enData?.developers ?? []), ...(zhData?.developers ?? [])])],
+    publishers: [...new Set([...(enData?.publishers ?? []), ...(zhData?.publishers ?? [])])],
+    genresZh: [...new Set((zhData?.genres ?? []).map((genre) => genre.description))],
+    genresEn: [...new Set((enData?.genres ?? details.genres ?? []).map((genre) => genre.description))],
     releaseDate: releaseDate(enData?.release_date?.date ?? zhData?.release_date?.date),
     comingSoon: Boolean(enData?.release_date?.coming_soon ?? zhData?.release_date?.coming_soon),
     communityRating: positiveRate,
     communityRatingCount: totalReviews,
-    communityRatingLabel: reviews.data.query_summary.review_score_desc ?? null,
+    communityRatingLabel: reviewSummary?.review_score_desc ?? null,
     criticRating: details.metacritic?.score ?? null,
     criticUrl: details.metacritic?.url ?? null,
     storeUrl: `https://store.steampowered.com/app/${appId}/`
@@ -119,7 +133,8 @@ export async function fetchSteamStoreMetadata(appId: number, fetcher: Fetcher = 
 export async function syncSteamStoreMetadata(
   ownerUserId: string,
   idempotencyKey: string,
-  fetcher: Fetcher = fetch
+  fetcher: Fetcher = fetch,
+  options: { retryBefore?: Date; missingOnly?: boolean } = {}
 ) {
   const [createdJob] = await db.insert(syncJobs).values({
     ownerUserId,
@@ -155,10 +170,12 @@ export async function syncSteamStoreMetadata(
     for (const candidate of priorCandidates) {
       latestFetched.set(candidate.gameId, Math.max(latestFetched.get(candidate.gameId) ?? 0, candidate.fetchedAt.getTime()));
     }
-    const staleBefore = Date.now() - 30 * 24 * 60 * 60 * 1000;
+    const staleBefore = (options.retryBefore ?? new Date(Date.now() - 30 * 24 * 60 * 60 * 1000)).getTime();
     const selected = [] as typeof mappedRows;
     const seenGames = new Set<string>();
     for (const row of mappedRows) {
+      if (options.missingOnly && row.game.nameEn && row.game.releaseDate
+        && row.game.communityRating !== null && row.game.criticRating !== null && row.game.coverUrl) continue;
       if (seenGames.has(row.game.id) || (latestFetched.get(row.game.id) ?? 0) >= staleBefore) continue;
       seenGames.add(row.game.id);
       selected.push(row);
@@ -176,6 +193,7 @@ export async function syncSteamStoreMetadata(
           const patch: Record<string, unknown> = { updatedAt: new Date() };
           const applied = new Set<string>();
           if (!locks.has("NAME_ZH") && metadata.nameZh && containsCjk(metadata.nameZh)
+            && (!options.missingOnly || !row.game.nameZh)
             && (row.game.nameZh === row.item.name || row.game.nameZh === row.game.nameEn)) {
             patch.nameZh = metadata.nameZh;
             applied.add("NAME_ZH");
@@ -186,17 +204,21 @@ export async function syncSteamStoreMetadata(
             applied.add("NAME_EN");
           }
           if (!locks.has("COVER_URL") && metadata.coverUrl
+            && (!options.missingOnly || !row.game.coverUrl)
             && (!row.game.coverUrl || row.game.coverUrlSource === "STEAM")) {
             patch.coverUrl = metadata.coverUrl;
             patch.coverUrlSource = "STEAM";
             applied.add("COVER_URL");
           }
-          if (!locks.has("RELEASE_DATE") && metadata.releaseDate && row.game.releaseDateSource !== "MANUAL") {
+          if (!locks.has("RELEASE_DATE") && metadata.releaseDate
+            && (!options.missingOnly || !row.game.releaseDate)
+            && row.game.releaseDateSource !== "MANUAL") {
             patch.releaseDate = metadata.releaseDate;
             patch.releaseDateSource = "STEAM";
             applied.add("RELEASE_DATE");
           }
           if (!locks.has("COMMUNITY_RATING") && metadata.communityRating !== null
+            && (!options.missingOnly || row.game.communityRating === null)
             && (row.game.ratingSource === null || row.game.ratingSource === "STEAM")) {
             patch.communityRating = metadata.communityRating;
             patch.communityRatingCount = metadata.communityRatingCount;
@@ -205,13 +227,18 @@ export async function syncSteamStoreMetadata(
             applied.add("COMMUNITY_RATING");
           }
           if (!locks.has("CRITIC_RATING") && metadata.criticRating !== null
+            && (!options.missingOnly || row.game.criticRating === null)
             && (row.game.ratingSource === null || row.game.ratingSource === "STEAM" || row.game.ratingSource === "METACRITIC")) {
             patch.criticRating = metadata.criticRating;
             patch.ratingUpdatedAt = new Date();
             if (!metadata.communityRating) patch.ratingSource = "METACRITIC";
             applied.add("CRITIC_RATING");
           }
-          const [updatedGame] = await transaction.update(games).set(patch).where(eq(games.id, row.game.id)).returning();
+          let updatedGame = row.game;
+          if (applied.size) {
+            patch.version = sql`${games.version} + 1`;
+            [updatedGame] = await transaction.update(games).set(patch).where(eq(games.id, row.game.id)).returning();
+          }
           const candidates = [
             ["NAME_ZH", metadata.nameZh, "Steam 简体中文商店名"],
             ["NAME_EN", metadata.nameEn, "Steam 英文商店名"],
@@ -244,7 +271,7 @@ export async function syncSteamStoreMetadata(
               }
             });
           }
-          if (metadata.communityRating !== null) {
+          if (metadata.communityRating !== null && (!options.missingOnly || applied.has("COMMUNITY_RATING"))) {
             await transaction.insert(gameRatings).values({
               ownerUserId,
               gameId: row.game.id,
@@ -258,7 +285,7 @@ export async function syncSteamStoreMetadata(
               set: { score: metadata.communityRating, ratingCount: metadata.communityRatingCount, sourceUrl: metadata.storeUrl, fetchedAt: new Date(), updatedAt: new Date() }
             });
           }
-          if (metadata.criticRating !== null) {
+          if (metadata.criticRating !== null && (!options.missingOnly || applied.has("CRITIC_RATING"))) {
             await transaction.insert(gameRatings).values({
               ownerUserId,
               gameId: row.game.id,
@@ -271,7 +298,7 @@ export async function syncSteamStoreMetadata(
               set: { score: metadata.criticRating, sourceUrl: metadata.criticUrl ?? metadata.storeUrl, fetchedAt: new Date(), updatedAt: new Date() }
             });
           }
-          if (updatedGame.releaseDate && updatedGame.platform) {
+          if (updatedGame.releaseDate && updatedGame.platform && (!options.missingOnly || applied.has("RELEASE_DATE"))) {
             const dedupeKey = `game:${updatedGame.id}:primary`;
             await transaction.insert(gameReleaseEvents).values({
               ownerUserId,
@@ -306,6 +333,34 @@ export async function syncSteamStoreMetadata(
         updated += 1;
       } catch {
         skipped += 1;
+        await db.insert(gameMetadataCandidates).values({
+          ownerUserId,
+          gameId: row.game.id,
+          provider: "STEAM",
+          externalGameId: String(row.item.steamAppId),
+          field: "RELEASE_DATE",
+          value: {
+            value: null,
+            sourceUrl: `https://store.steampowered.com/app/${row.item.steamAppId}/`,
+            sourceLabel: "Steam 商店元数据暂不可用"
+          },
+          confidence: 0,
+          status: "PENDING",
+          fetchedAt: new Date()
+        }).onConflictDoUpdate({
+          target: [gameMetadataCandidates.gameId, gameMetadataCandidates.provider, gameMetadataCandidates.externalGameId, gameMetadataCandidates.field],
+          set: {
+            value: {
+              value: null,
+              sourceUrl: `https://store.steampowered.com/app/${row.item.steamAppId}/`,
+              sourceLabel: "Steam 商店元数据暂不可用"
+            },
+            confidence: 0,
+            status: "PENDING",
+            fetchedAt: new Date(),
+            updatedAt: new Date()
+          }
+        });
       }
     }
     const hasMore = selected.length === 8;

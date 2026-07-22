@@ -1,6 +1,7 @@
 import { and, desc, eq, isNull } from "drizzle-orm";
 import { type DashboardData, type DashboardFilters } from "@/lib/dashboard";
-import { gameStatusLabels, type GameStatus } from "@/lib/game-status";
+import { gameStatusLabels, statusesWithCompletion, type GameStatus } from "@/lib/game-status";
+import { buildSteamMatchWorkbench } from "@/lib/steam-match-workbench";
 import { db } from "@/server/db";
 import { assets, externalAccounts, games, gameStatusAssignments, inventoryItems, steamLibraryItems } from "@/server/db/schema";
 
@@ -22,6 +23,7 @@ type DashboardGame = {
   nameZh: string;
   platform: string | null;
   playStatus: string | null;
+  isCompleted: boolean;
   statuses: GameStatus[];
   completedAt: string | null;
   progressPercent: number | null;
@@ -41,7 +43,7 @@ export function buildDashboardGameMetrics(
     if (filters.scope === "STEAM_LINKED" && game.steamAppId === null) return false;
     return true;
   });
-  const completedCount = filtered.filter((game) => game.statuses.includes("COMPLETED")).length;
+  const completedCount = filtered.filter((game) => game.isCompleted).length;
   const progressValues = filtered.flatMap((game) => game.progressPercent === null ? [] : [game.progressPercent]);
   const playtimeMinutes = filtered.reduce(
     (sum, game) => sum + (game.playtimeMinutesManual ?? game.playtimeMinutesSynced),
@@ -106,8 +108,11 @@ export async function getDashboardData(ownerUserId: string, filters: DashboardFi
     db.select({
       id: games.id,
       nameZh: games.nameZh,
+      nameEn: games.nameEn,
+      searchAliases: games.searchAliases,
       platform: games.platform,
       playStatus: games.playStatus,
+      isCompleted: games.isCompleted,
       completedAt: games.completedAt,
       progressPercent: games.progressPercent,
       playtimeMinutesManual: games.playtimeMinutesManual,
@@ -125,6 +130,14 @@ export async function getDashboardData(ownerUserId: string, filters: DashboardFi
       openedQuantity: inventoryItems.openedQuantity
     }).from(inventoryItems).where(and(eq(inventoryItems.ownerUserId, ownerUserId), isNull(inventoryItems.deletedAt))),
     db.select({
+      steamAppId: steamLibraryItems.steamAppId,
+      name: steamLibraryItems.name,
+      playtimeMinutes: steamLibraryItems.playtimeMinutes,
+      recentPlaytimeMinutes: steamLibraryItems.recentPlaytimeMinutes,
+      lastPlayedAt: steamLibraryItems.lastPlayedAt,
+      iconUrl: steamLibraryItems.iconUrl,
+      matchMethod: steamLibraryItems.matchMethod,
+      licenseType: steamLibraryItems.licenseType,
       matchStatus: steamLibraryItems.matchStatus
     }).from(steamLibraryItems).where(and(
       eq(steamLibraryItems.ownerUserId, ownerUserId),
@@ -143,11 +156,25 @@ export async function getDashboardData(ownerUserId: string, filters: DashboardFi
   }, new Map());
   const dashboardGames: DashboardGame[] = gameRows.map((game) => ({
     ...game,
-    statuses: statusesByGame.get(game.id) ?? (game.playStatus ? [game.playStatus as GameStatus] : [])
+    statuses: statusesWithCompletion(
+      statusesByGame.get(game.id) ?? (game.playStatus ? [game.playStatus as GameStatus] : []),
+      game.isCompleted
+    )
   }));
   const gameMetrics = buildDashboardGameMetrics(dashboardGames, filters);
   const matched = steamRows.filter((item) => item.matchStatus === "MATCHED").length;
-  const unmatched = steamRows.filter((item) => item.matchStatus === "UNMATCHED").length;
+  const workbench = buildSteamMatchWorkbench(
+    steamRows.filter((item) => item.matchStatus === "UNMATCHED"),
+    gameRows.map((game) => ({
+      id: game.id,
+      nameZh: game.nameZh,
+      nameEn: game.nameEn,
+      platform: game.platform,
+      steamAppId: game.steamAppId,
+      searchAliases: game.searchAliases
+    }))
+  );
+  const unmatched = workbench.counts.actionable;
   const ignored = steamRows.filter((item) => item.matchStatus === "IGNORED").length;
   return {
     filters,
@@ -174,6 +201,7 @@ export async function getDashboardData(ownerUserId: string, filters: DashboardFi
       total: steamRows.length,
       matched,
       unmatched,
+      catalog: workbench.counts.CATALOG,
       ignored,
       coveragePercent: steamRows.length ? Math.round((matched / steamRows.length) * 1000) / 10 : 0
     }

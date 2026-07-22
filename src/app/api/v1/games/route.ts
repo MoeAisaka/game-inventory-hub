@@ -11,6 +11,7 @@ export async function GET(request: NextRequest) {
   const query: Record<string, string | string[]> = Object.fromEntries(request.nextUrl.searchParams);
   query.status = request.nextUrl.searchParams.getAll("status");
   query.platform = request.nextUrl.searchParams.getAll("platform");
+  query.genre = request.nextUrl.searchParams.getAll("genre");
   const parsed = gameQuerySchema.safeParse(query);
   if (!parsed.success) return apiError("INVALID_REQUEST", "查询参数不合法", 400, id, z.flattenError(parsed.error).fieldErrors);
   return apiOk(await listGames(auth.userId, parsed.data), 200, id);

@@ -24,5 +24,5 @@ curl --fail --request POST \
   --header "Idempotency-Key: playstation-20260714T080000Z" \
   --header "Content-Type: application/json" \
   --data-binary @integrations/examples/playstation-snapshot.example.json \
-  https://inventory.example.com/api/v1/internal/platform-snapshot
+  https://games.example.invalid/api/v1/internal/platform-snapshot
 ```

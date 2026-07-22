@@ -4,7 +4,7 @@ import { NintendoSidecarError } from "./errors.mjs";
 const SAFE_ENV = {
   NXAPI_DEBUG_FILE: "0",
   NXAPI_SKIP_UPDATE_CHECK: "1",
-  NXAPI_USER_AGENT: "game-inventory-hub-nintendo-sidecar/0.2.0"
+  NXAPI_USER_AGENT: "games.example.invalid-nintendo-sidecar/0.2.0"
 };
 
 function run(config, args, options = {}) {
@@ -20,7 +20,7 @@ function run(config, args, options = {}) {
     const authRequired = /authenticate|session token|SelectedUser|NintendoAccountToken|login/i.test(stderr);
     throw new NintendoSidecarError(
       authRequired ? "NINTENDO_AUTH_REQUIRED" : "NXAPI_COMMAND_FAILED",
-      authRequired ? "Nintendo Account 授权尚未完成，请先运行 node src/auth-start.mjs" : "Nintendo 只读数据获取失败"
+      authRequired ? "Nintendo Account 授权尚未完成，请先运行 npm run nintendo:auth" : "Nintendo 只读数据获取失败"
     );
   }
 }

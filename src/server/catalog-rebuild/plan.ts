@@ -57,7 +57,7 @@ export type PlannedGame = {
   nameEn: string | null;
   platform: string;
   ownershipStatus: "OWNED" | "PLAYED_ONLY";
-  playStatus: "BACKLOG" | "PLAYING" | "COMPLETED";
+  playStatus: "BACKLOG" | "PLAYING" | "PLAYED";
   startedAt: string | null;
   completedAt: string | null;
   lastPlayedAt: string | null;
@@ -223,12 +223,12 @@ function sourcePlatform(item: SourceItem) {
 }
 
 function validateSources(sources: RebuildSources) {
-  if (sources.steam.length === 0) throw new Error("STEAM_EMPTY");
+  if (sources.steam.length !== 302) throw new Error(`STEAM_COUNT_MISMATCH:${sources.steam.length}:302`);
   if (sources.playstation.status !== "COMPLETE") throw new Error(`PLAYSTATION_NOT_COMPLETE:${sources.playstation.status}`);
-  if (sources.playstation.items.length === 0) throw new Error("PLAYSTATION_EMPTY");
+  if (sources.playstation.items.length !== 605) throw new Error(`PLAYSTATION_COUNT_MISMATCH:${sources.playstation.items.length}:605`);
   if (sources.nintendo.status !== "COMPLETE") throw new Error(`NINTENDO_NOT_COMPLETE:${sources.nintendo.status}`);
   if (sources.nintendo.items.length === 0) throw new Error("NINTENDO_EMPTY");
-  if (sources.igdb.length === 0) throw new Error("IGDB_EMPTY");
+  if (sources.igdb.length !== 325) throw new Error(`IGDB_COUNT_MISMATCH:${sources.igdb.length}:325`);
   const sourceKeys = new Set<string>();
   for (const item of [...sources.steam, ...sources.playstation.items, ...sources.nintendo.items]) {
     const key = nodeId(item.provider, item.externalGameId);
@@ -325,7 +325,7 @@ export function buildCatalogRebuildPlan(sources: RebuildSources, generatedAt = n
     const playStatus = totalPlaytime === 0
       ? "BACKLOG" as const
       : lastPlayedAt && Date.parse(lastPlayedAt) < recentCutoff
-        ? "COMPLETED" as const
+        ? "PLAYED" as const
         : "PLAYING" as const;
     const progressValues = items.map((item) => item.progressPercent).filter((value): value is number => value !== null && value !== undefined);
     const covers: Array<{ provider: CatalogProvider; value: string | null | undefined }> = [
@@ -345,7 +345,7 @@ export function buildCatalogRebuildPlan(sources: RebuildSources, generatedAt = n
       ownershipStatus: owned ? "OWNED" : "PLAYED_ONLY",
       playStatus,
       startedAt: dateOnly(firstPlayedAt),
-      completedAt: playStatus === "COMPLETED" ? dateOnly(lastPlayedAt) : null,
+      completedAt: null,
       lastPlayedAt,
       progressPercent: progressValues.length ? Math.max(...progressValues) : null,
       playtimeMinutesSynced: totalPlaytime,
@@ -399,12 +399,18 @@ export function buildCatalogRebuildPlan(sources: RebuildSources, generatedAt = n
   return { ...unsigned, planSha256: sha256(unsigned) };
 }
 
+export function assertUniquePlannedIgdbIds(games: PlannedGame[]) {
+  const igdbIds = games.map((game) => game.igdbGameId).filter((value): value is number => value !== null);
+  if (new Set(igdbIds).size !== igdbIds.length) throw new Error("CATALOG_PLAN_DUPLICATE_IGDB_ID");
+}
+
 export function verifyCatalogRebuildPlan(plan: CatalogRebuildPlan) {
   const { planSha256, ...unsigned } = plan;
   if (sha256(unsigned) !== planSha256) throw new Error("CATALOG_PLAN_HASH_MISMATCH");
-  if (plan.summary.steamCount <= 0 || plan.summary.playstationCount <= 0 || plan.summary.igdbCount <= 0) {
+  if (plan.summary.steamCount !== 302 || plan.summary.playstationCount !== 605 || plan.summary.igdbCount !== 325) {
     throw new Error("CATALOG_PLAN_SOURCE_COUNTS_INVALID");
   }
   if (plan.summary.nintendoCount <= 0 || plan.games.length === 0) throw new Error("CATALOG_PLAN_EMPTY");
   if (new Set(plan.games.map((game) => game.id)).size !== plan.games.length) throw new Error("CATALOG_PLAN_DUPLICATE_GAME_ID");
+  assertUniquePlannedIgdbIds(plan.games);
 }

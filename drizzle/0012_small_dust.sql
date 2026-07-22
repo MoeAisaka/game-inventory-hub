@@ -1,0 +1,1 @@
+ALTER TYPE "public"."game_record_status" ADD VALUE 'PLAYED' BEFORE 'PAUSED';

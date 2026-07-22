@@ -1,0 +1,2 @@
+ALTER TABLE "games" ADD CONSTRAINT "games_search_aliases_array" CHECK (jsonb_typeof("games"."search_aliases") = 'array');--> statement-breakpoint
+ALTER TABLE "steam_library_items" ADD CONSTRAINT "steam_library_items_license_owners_array" CHECK (jsonb_typeof("steam_library_items"."license_owner_steam_ids") = 'array');

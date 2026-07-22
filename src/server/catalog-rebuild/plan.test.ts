@@ -1,5 +1,5 @@
 import { describe, expect, test } from "vitest";
-import { buildCatalogRebuildPlan, identityTitle, verifyCatalogRebuildPlan, type RebuildSources, type SourceItem } from "./plan";
+import { assertUniquePlannedIgdbIds, buildCatalogRebuildPlan, identityTitle, verifyCatalogRebuildPlan, type RebuildSources, type SourceItem } from "./plan";
 
 function source(provider: SourceItem["provider"], externalGameId: string, name: string, extra: Partial<SourceItem> = {}): SourceItem {
   return { provider, externalGameId, name, isOwned: true, ...extra };
@@ -9,13 +9,13 @@ function fixture(): RebuildSources {
   return {
     ownerUserId: "00000000-0000-4000-8000-000000000001",
     capturedAt: "2026-07-14T00:00:00.000Z",
-    steam: Array.from({ length: 2 }, (_, index) => source("STEAM", String(1000 + index), index === 0 ? "Example Game" : `Steam Game ${index}`)),
+    steam: Array.from({ length: 302 }, (_, index) => source("STEAM", String(1000 + index), index === 0 ? "Example Game" : `Steam Game ${index}`)),
     playstation: {
       status: "COMPLETE",
       contentSha256: "a".repeat(64),
       externalUserId: "ps-user",
       displayName: "PS User",
-      items: Array.from({ length: 2 }, (_, index) => source("PLAYSTATION", `concept:${index}`, index === 0 ? "Example Game Enhanced Edition" : `PlayStation Game ${index}`, { platform: index % 2 ? "PS4" : "PS5" }))
+      items: Array.from({ length: 605 }, (_, index) => source("PLAYSTATION", `concept:${index}`, index === 0 ? "Example Game Enhanced Edition" : `PlayStation Game ${index}`, { platform: index % 2 ? "PS4" : "PS5" }))
     },
     nintendo: {
       status: "COMPLETE",
@@ -24,7 +24,7 @@ function fixture(): RebuildSources {
       displayName: "Nintendo Account",
       items: [source("NINTENDO", "title:0100000000000001", "Example Game", { isOwned: false, playtimeMinutes: 120 })]
     },
-    igdb: Array.from({ length: 2 }, (_, index) => ({
+    igdb: Array.from({ length: 325 }, (_, index) => ({
       externalGameId: String(5000 + index), oldGameId: `old-${index}`, nameZh: index === 0 ? "示例游戏" : `IGDB Game ${index}`, nameEn: index === 0 ? "Example Game" : null,
       coverUrl: index === 0 ? "https://example.com/cover.jpg" : null, releaseDate: index === 0 ? "2026-01-01" : null,
       communityRating: null, communityRatingCount: null, criticRating: null, criticRatingCount: null,
@@ -72,8 +72,16 @@ describe("catalog rebuild identity", () => {
 
   test("refuses incomplete source sets", () => {
     const sources = fixture();
-    sources.playstation.status = "PARTIAL";
-    expect(() => buildCatalogRebuildPlan(sources)).toThrow("PLAYSTATION_NOT_COMPLETE");
+    sources.playstation.items.pop();
+    expect(() => buildCatalogRebuildPlan(sources)).toThrow("PLAYSTATION_COUNT_MISMATCH");
+  });
+
+  test("rejects plans that contain duplicate IGDB identities", () => {
+    const plan = buildCatalogRebuildPlan(fixture(), new Date("2026-07-14T08:00:00.000Z"));
+    const identified = plan.games.find((game) => game.igdbGameId === 5000)!;
+    const other = plan.games.find((game) => game.igdbGameId === null)!;
+    other.igdbGameId = identified.igdbGameId;
+    expect(() => assertUniquePlannedIgdbIds(plan.games)).toThrow("CATALOG_PLAN_DUPLICATE_IGDB_ID");
   });
 
   test("merges base and enhanced IGDB editions while selecting base metadata", () => {

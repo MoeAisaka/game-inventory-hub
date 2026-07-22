@@ -4,7 +4,7 @@ import { env } from "@/lib/env";
 import { db } from "@/server/db";
 import { sessions, users } from "@/server/db/schema";
 
-export const SESSION_COOKIE_NAME = "game_inventory_hub_session";
+export const SESSION_COOKIE_NAME = "game_inventory_session";
 
 export function hashSessionToken(token: string) {
   return createHash("sha256").update(token).digest("hex");

@@ -1,0 +1,1 @@
+CREATE UNIQUE INDEX "games_owner_active_igdb_key" ON "games" USING btree ("owner_user_id","igdb_game_id") WHERE "games"."deleted_at" IS NULL AND "games"."igdb_game_id" IS NOT NULL;

@@ -1,6 +1,7 @@
 import { and, eq, isNull, notInArray, sql } from "drizzle-orm";
 import { z } from "zod";
 import { env } from "@/lib/env";
+import { gameSearchVariants } from "@/lib/game-search";
 import { db } from "@/server/db";
 import {
   externalAccounts,
@@ -12,6 +13,7 @@ import {
   syncJobs
 } from "@/server/db/schema";
 import { getExternalAccount } from "./accounts";
+import { recomputeSyncedGameActivity } from "@/server/services/game-activity";
 
 const ownedGamesResponse = z.object({
   response: z.object({
@@ -76,6 +78,7 @@ export async function fetchSteamOwnedGames(
   url.searchParams.set("format", "json");
   url.searchParams.set("include_appinfo", "true");
   url.searchParams.set("include_played_free_games", "true");
+  url.searchParams.set("skip_unvetted_apps", "false");
   let response: Response;
   try {
     response = await fetcher(url, { signal: AbortSignal.timeout(env().EXTERNAL_REQUEST_TIMEOUT_MS) });
@@ -134,23 +137,25 @@ export async function syncSteamOwnedGames(
       const priorByAppId = new Map(priorItems.map((item) => [item.steamAppId, item]));
       const gamesByNormalizedTitle = new Map<string, typeof localGames>();
       for (const game of localGames) {
-        for (const title of [game.nameZh, game.nameEn]) {
+        for (const title of [game.nameZh, game.nameEn, ...game.searchAliases]) {
           if (!title) continue;
-          const normalized = normalizeSteamTitle(title);
-          if (!normalized) continue;
-          const bucket = gamesByNormalizedTitle.get(normalized) ?? [];
-          if (!bucket.some((candidate) => candidate.id === game.id)) bucket.push(game);
-          gamesByNormalizedTitle.set(normalized, bucket);
+          for (const variant of gameSearchVariants(title)) {
+            const normalized = normalizeSteamTitle(variant);
+            if (!normalized) continue;
+            const bucket = gamesByNormalizedTitle.get(normalized) ?? [];
+            if (!bucket.some((candidate) => candidate.id === game.id)) bucket.push(game);
+            gamesByNormalizedTitle.set(normalized, bucket);
+          }
         }
       }
 
       await transaction.update(steamLibraryItems).set({ isOwned: false, updatedAt: now })
-        .where(eq(steamLibraryItems.ownerUserId, ownerUserId));
+        .where(and(eq(steamLibraryItems.ownerUserId, ownerUserId), eq(steamLibraryItems.licenseType, "OWNED")));
 
       let matched = 0;
       let unmatched = 0;
       let ignored = 0;
-      const playtimeChangedGames = new Set<string>();
+      const matchedGameIds = new Set<string>(priorItems.map((item) => item.matchedGameId).filter((value): value is string => Boolean(value)));
       for (const external of owned) {
         const normalizedName = normalizeSteamTitle(external.name);
         const prior = priorByAppId.get(external.appid);
@@ -158,7 +163,9 @@ export async function syncSteamOwnedGames(
         const priorManualMatch = prior?.matchStatus === "MATCHED" && prior.matchedGameId
           ? gamesById.get(prior.matchedGameId)
           : undefined;
-        const exactCandidates = (gamesByNormalizedTitle.get(normalizedName) ?? [])
+        const exactCandidates = [...new Map(gameSearchVariants(external.name)
+          .flatMap((variant) => gamesByNormalizedTitle.get(normalizeSteamTitle(variant)) ?? [])
+          .map((candidate) => [candidate.id, candidate])).values()]
           .filter((candidate) => candidate.steamAppId === null || candidate.steamAppId === external.appid);
         const exactMatch = uniqueSteamNameCandidate(exactCandidates);
         const existing = appIdMatch ?? priorManualMatch ?? exactMatch;
@@ -180,7 +187,7 @@ export async function syncSteamOwnedGames(
             coverUrlSource: existing.coverUrl ? existing.coverUrlSource : (iconUrl ? "STEAM" : existing.coverUrlSource),
             platform: existing.platform ?? "STEAM",
             platformSource: existing.platform ? existing.platformSource : "STEAM",
-            ownershipStatus: existing.ownershipStatus ?? "OWNED",
+            ownershipStatus: "OWNED",
             nameEn: existing.nameEn ?? englishName,
             nameEnSource: existing.nameEn ? existing.nameEnSource : (englishName ? "STEAM" : existing.nameEnSource),
             updatedAt: now,
@@ -204,6 +211,7 @@ export async function syncSteamOwnedGames(
           });
           matchStatus = "MATCHED";
           matchedGameId = record.id;
+          matchedGameIds.add(record.id);
           matchConfidence = appIdMatch || priorManualMatch ? 100 : 95;
           matchMethod = appIdMatch ? "APP_ID" : priorManualMatch ? prior!.matchMethod : "UNIQUE_EXACT_TITLE";
           gamesByAppId.set(external.appid, existing);
@@ -230,6 +238,10 @@ export async function syncSteamOwnedGames(
           matchedGameId,
           matchConfidence,
           matchMethod,
+          licenseType: "OWNED",
+          licenseOwnerSteamIds: [account.externalUserId],
+          familyGroupId: null,
+          excludeReason: null,
           isOwned: true,
           lastSeenJobId: job.id,
           lastSeenAt: now,
@@ -247,6 +259,10 @@ export async function syncSteamOwnedGames(
             matchedGameId,
             matchConfidence,
             matchMethod,
+            licenseType: "OWNED",
+            licenseOwnerSteamIds: [account.externalUserId],
+            familyGroupId: null,
+            excludeReason: null,
             isOwned: true,
             lastSeenJobId: job.id,
             lastSeenAt: now,
@@ -260,17 +276,24 @@ export async function syncSteamOwnedGames(
             gameId: matchedGameId,
             source: "STEAM",
             externalAcquisitionId: String(external.appid),
+            channel: "SELF_PURCHASED",
+            platform: "STEAM",
+            availability: "AVAILABLE",
             isOwned: true,
-            details: { steamAppId: external.appid, title: external.name },
+            details: { steamAppId: external.appid, title: external.name, accessType: "OWNED" },
             lastConfirmedAt: now
           }).onConflictDoUpdate({
             target: [gameAcquisitions.ownerUserId, gameAcquisitions.source, gameAcquisitions.externalAcquisitionId],
             set: {
               gameId: matchedGameId,
               isOwned: true,
-              details: { steamAppId: external.appid, title: external.name },
+              channel: "SELF_PURCHASED",
+              platform: "STEAM",
+              availability: "AVAILABLE",
+              details: { steamAppId: external.appid, title: external.name, accessType: "OWNED" },
               lastConfirmedAt: now,
-              updatedAt: now
+              updatedAt: now,
+              version: sql`${gameAcquisitions.version} + 1`
             }
           });
           const playtimeChanged = !prior || prior.playtimeMinutes !== external.playtime_forever;
@@ -287,47 +310,20 @@ export async function syncSteamOwnedGames(
               observedAt: now
             });
           }
-          if (playtimeChanged && external.playtime_forever > 0) playtimeChangedGames.add(matchedGameId);
         }
       }
 
       const ownedExternalIds = owned.map((item) => String(item.appid));
       if (ownedExternalIds.length) {
-        await transaction.update(gameAcquisitions).set({ isOwned: false, updatedAt: now }).where(and(
+        await transaction.update(gameAcquisitions).set({ isOwned: false, availability: "TEMPORARILY_UNAVAILABLE", updatedAt: now, version: sql`${gameAcquisitions.version} + 1` }).where(and(
           eq(gameAcquisitions.ownerUserId, ownerUserId),
           eq(gameAcquisitions.source, "STEAM"),
-          notInArray(gameAcquisitions.externalAcquisitionId, ownedExternalIds)
+          notInArray(gameAcquisitions.externalAcquisitionId, ownedExternalIds),
+          sql`coalesce(${gameAcquisitions.details}->>'accessType', 'OWNED') = 'OWNED'`
         ));
       }
 
-      const aggregates = await transaction.select({
-        gameId: steamLibraryItems.matchedGameId,
-        playtimeMinutes: sql<number>`coalesce(sum(${steamLibraryItems.playtimeMinutes}), 0)::int`,
-        lastPlayedAt: sql<Date | string | null>`max(${steamLibraryItems.lastPlayedAt})`,
-        firstObservedPlayedAt: sql<Date | string | null>`min(case when ${steamLibraryItems.playtimeMinutes} > 0 then ${steamLibraryItems.createdAt} else null end)`
-      }).from(steamLibraryItems).where(and(
-        eq(steamLibraryItems.ownerUserId, ownerUserId),
-        eq(steamLibraryItems.isOwned, true),
-        eq(steamLibraryItems.matchStatus, "MATCHED")
-      )).groupBy(steamLibraryItems.matchedGameId);
-
-      for (const aggregate of aggregates) {
-        if (!aggregate.gameId) continue;
-        const game = gamesById.get(aggregate.gameId);
-        await transaction.update(games).set({
-          playtimeMinutesSynced: aggregate.playtimeMinutes,
-          lastPlayedAt: latestDate(
-            game?.lastPlayedAt ?? null,
-            aggregate.lastPlayedAt ? new Date(aggregate.lastPlayedAt) : null
-          ),
-          firstObservedPlayedAt: game?.firstObservedPlayedAt
-            ?? (aggregate.firstObservedPlayedAt ? new Date(aggregate.firstObservedPlayedAt) : null),
-          playtimeLastChangedAt: playtimeChangedGames.has(aggregate.gameId) ? now : game?.playtimeLastChangedAt,
-          ownershipStatus: "OWNED",
-          updatedAt: now,
-          version: sql`${games.version} + 1`
-        }).where(and(eq(games.id, aggregate.gameId), eq(games.ownerUserId, ownerUserId)));
-      }
+      await recomputeSyncedGameActivity(transaction, ownerUserId, [...matchedGameIds], now);
 
       await transaction.update(externalAccounts).set({
         lastSyncedAt: now,

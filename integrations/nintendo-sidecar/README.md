@@ -14,23 +14,23 @@ This isolated one-shot adapter uses the community-maintained `nxapi` CLI. The de
 
 ## First authorization
 
-Start authorization from the Sidecar directory with a private data path configured:
+Start a durable two-step authorization from the application root:
 
 ```sh
-node src/auth-start.mjs
+npm run nintendo:auth
 ```
 
 Follow the printed Nintendo login URL. On the account selection page, copy the complete link that starts with `npf71b963c1b7b6d119://auth`; do not copy the browser address bar's `authorize` URL. Save the callback privately, then complete the same pending PKCE authorization within 30 minutes:
 
 ```sh
-security find-generic-password -a nintendo -s game-inventory-hub.nintendo-auth-callback -w \
-  | node src/auth-complete.mjs
+security find-generic-password -a nintendo -s games.example.invalid.nintendo-auth-callback -w \
+  | npm run nintendo:auth:complete
 ```
 
 也可以直接运行交互式入口（推荐），终端会隐藏读取回调并在交换一次性授权码前校验格式：
 
 ```sh
-node src/auth-complete.mjs
+npm run nintendo:auth:complete
 ```
 
 不要使用 `read -s "CALLBACK?提示" CALLBACK`：在 zsh 中重复变量名会把已读取的回调覆盖为空值。
@@ -40,13 +40,13 @@ The pending verifier is written with mode `0600`, which makes the authorization 
 Generate the first NSO preview:
 
 ```sh
-npm run preview
+npm run nintendo:preview
 ```
 
 For optional Parental Controls detail, run:
 
 ```sh
-NINTENDO_SYNC_MODE=pctl NINTENDO_PLAYER_ID='player-id' npm run preview
+NINTENDO_SYNC_MODE=pctl NINTENDO_PLAYER_ID='player-id' npm run nintendo:preview
 ```
 
 The private preview is written to `output/nintendo/preview-latest.json`.

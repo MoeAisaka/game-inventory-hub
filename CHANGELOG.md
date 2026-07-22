@@ -2,6 +2,16 @@
 
 ## Unreleased
 
+## 0.34.0 - 2026-07-22
+
+- Add a unified action home, play planner, wishlist, release catalog, media library, and analytics surfaces.
+- Add inventory v2 products, variants, append-only movements, reversal workflows, and compatibility views for legacy inventory.
+- Separate activity state from completion facts and add lifecycle-safe quick actions.
+- Add multilingual search normalization, platform-aware matching, game ratings, hardware capability profiles, and purchase advice.
+- Add Steam Family, screenshot, wishlist, release, and public-store integrations with isolated state and bounded network behavior.
+- Add database migrations 0011 through 0034 and regression coverage for the new state, search, inventory, release, and media contracts.
+- Exclude production databases, account identifiers, imported libraries, deployment scripts, browser artifacts, hostnames, and private Sidecar state from this community release.
+
 ## 0.14.0 - 2026-07-15
 
 - Add page-level selection and filtered-result selection for game records.

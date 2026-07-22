@@ -1,0 +1,3 @@
+ALTER TABLE "platform_wishlist_items" ADD COLUMN "plan_order" integer;--> statement-breakpoint
+CREATE INDEX "platform_wishlist_items_owner_plan_idx" ON "platform_wishlist_items" USING btree ("owner_user_id","plan_order");--> statement-breakpoint
+ALTER TABLE "platform_wishlist_items" ADD CONSTRAINT "platform_wishlist_items_plan_order_range" CHECK ("platform_wishlist_items"."plan_order" IS NULL OR "platform_wishlist_items"."plan_order" BETWEEN 1 AND 9999);

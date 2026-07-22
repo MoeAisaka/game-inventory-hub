@@ -24,14 +24,14 @@ read -s "NPSSO?PlayStation NPSSO: "
 echo
 security add-generic-password -U \
   -a playstation \
-  -s game-inventory-hub.playstation-npsso \
+  -s games.example.invalid.playstation-npsso \
   -w "$NPSSO"
 unset NPSSO
 ```
 
-5. Run the Sidecar with private state and output paths configured through its environment variables.
+5. From the application root run `npm run psn:preview`.
 
-After the first successful exchange, delete any temporary NPSSO file. Later previews use the refresh token from the private Sidecar state file. If Sony invalidates it, acquire a new NPSSO and update Keychain.
+After the first successful exchange, the runner removes its temporary NPSSO file. Later previews use the refresh token from `.runtime/playstation/auth.json`. If Sony invalidates it, acquire a new NPSSO and update Keychain.
 
 ## Preview output
 

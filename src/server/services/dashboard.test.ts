@@ -8,6 +8,7 @@ const records = [
     nameZh: "游戏一",
     platform: "STEAM",
     playStatus: "COMPLETED",
+    isCompleted: true,
     statuses: ["COMPLETED"] as GameStatus[],
     completedAt: "2026-01-03",
     progressPercent: 100,
@@ -20,6 +21,7 @@ const records = [
     nameZh: "游戏二",
     platform: "STEAM",
     playStatus: "PLAYING",
+    isCompleted: false,
     statuses: ["PLAYING", "TO_BUY"] as GameStatus[],
     completedAt: null,
     progressPercent: 50,
@@ -32,6 +34,7 @@ const records = [
     nameZh: "游戏三",
     platform: "PLAYSTATION",
     playStatus: "BACKLOG",
+    isCompleted: false,
     statuses: ["BACKLOG"] as GameStatus[],
     completedAt: null,
     progressPercent: null,
@@ -75,7 +78,7 @@ describe("dashboard aggregation", () => {
     }, new Date("2026-07-13T00:00:00Z"));
     expect(result).toMatchObject({ gameCount: 1, completedCount: 0, playtimeMinutes: 600, averageProgress: 50 });
     expect(result.statusDistribution).toEqual([
-      { key: "TO_BUY", label: "待购入", value: 1 },
+      { key: "TO_BUY", label: "待购入／愿望单", value: 1 },
       { key: "PLAYING", label: "游玩中", value: 1 }
     ]);
     expect(result.platformDistribution).toEqual([{ key: "STEAM", label: "Steam", value: 1 }]);

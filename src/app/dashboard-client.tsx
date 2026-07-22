@@ -236,14 +236,15 @@ export function DashboardClient({ initialData }: { initialData: DashboardData })
     </section>
     <section className="content-section steam-coverage-panel">
       <div className="chart-heading"><div><h2>Steam 匹配覆盖</h2><p>仅统计当前账号拥有的 Steam 游戏；未匹配记录不会自动创建本地游戏。</p></div><span>{data.steamCoverage.total} 项</span></div>
-      <div className="coverage-track" role="img" aria-label={`Steam 已关联 ${data.steamCoverage.matched} 项，待复核 ${data.steamCoverage.unmatched} 项，已忽略 ${data.steamCoverage.ignored} 项`}>
+      <div className="coverage-track" role="img" aria-label={`Steam 已关联 ${data.steamCoverage.matched} 项，待复核 ${data.steamCoverage.unmatched} 项，仅目录 ${data.steamCoverage.catalog} 项，已忽略 ${data.steamCoverage.ignored} 项`}>
         {data.steamCoverage.total ? <>
           <span className="coverage-matched" style={{ width: `${(data.steamCoverage.matched / data.steamCoverage.total) * 100}%` }} />
           <span className="coverage-unmatched" style={{ width: `${(data.steamCoverage.unmatched / data.steamCoverage.total) * 100}%` }} />
+          <span className="coverage-catalog" style={{ width: `${(data.steamCoverage.catalog / data.steamCoverage.total) * 100}%` }} />
           <span className="coverage-ignored" style={{ width: `${(data.steamCoverage.ignored / data.steamCoverage.total) * 100}%` }} />
         </> : null}
       </div>
-      <div className="coverage-legend"><span><i className="matched" />已关联 {data.steamCoverage.matched}</span><span><i className="unmatched" />待复核 {data.steamCoverage.unmatched}</span><span><i className="ignored" />已忽略 {data.steamCoverage.ignored}</span></div>
+      <div className="coverage-legend"><span><i className="matched" />已关联 {data.steamCoverage.matched}</span><span><i className="unmatched" />待复核 {data.steamCoverage.unmatched}</span><span><i className="catalog" />仅目录 {data.steamCoverage.catalog}</span><span><i className="ignored" />已忽略 {data.steamCoverage.ignored}</span></div>
     </section>
     <DashboardCharts data={data} />
     <p className="dashboard-source-note">数据源：本系统正式业务表与 Steam 官方 GetOwnedGames；生成于 {formatShanghaiDateTime(data.generatedAt)}。</p>
