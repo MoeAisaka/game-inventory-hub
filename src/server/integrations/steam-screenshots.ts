@@ -41,13 +41,25 @@ export type SteamScreenshotDetail = {
 
 function decodeHtml(value: string) {
   return value
+    .replace(/&(?:amp|quot|#39|apos|lt|gt|#(?:x[0-9a-f]+|\d+));/gi, (entity) => {
+      const normalized = entity.toLocaleLowerCase("en-US");
+      const named: Record<string, string> = {
+        "&amp;": "&",
+        "&quot;": "\"",
+        "&#39;": "'",
+        "&apos;": "'",
+        "&lt;": "<",
+        "&gt;": ">"
+      };
+      if (named[normalized]) return named[normalized];
+      const numeric = normalized.startsWith("&#x")
+        ? Number.parseInt(normalized.slice(3, -1), 16)
+        : Number.parseInt(normalized.slice(2, -1), 10);
+      return Number.isSafeInteger(numeric) && numeric >= 0 && numeric <= 0x10ffff && !(numeric >= 0xd800 && numeric <= 0xdfff)
+        ? String.fromCodePoint(numeric)
+        : "\ufffd";
+    })
     .replace(/<[^>]+>/g, "")
-    .replace(/&amp;/g, "&")
-    .replace(/&quot;/g, "\"")
-    .replace(/&#39;|&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&#(\d+);/g, (_, code: string) => String.fromCodePoint(Number(code)))
     .trim();
 }
 
