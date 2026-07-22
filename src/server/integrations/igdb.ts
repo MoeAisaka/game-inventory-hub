@@ -169,7 +169,7 @@ export function igdbCalendarPlatform(platformId: number, externalGames: Array<{ 
   if (platformId === 48 || platformId === 167) return "PLAYSTATION";
   if (platformId === 130) return "NINTENDO_SWITCH";
   if (platformId === 508) return "NINTENDO_SWITCH_2";
-  return externalGames.some((external) => external.url?.includes("store.steampowered.com")) ? "STEAM" : "PC_OTHER";
+  return externalGames.some((external) => officialStoreUrl(external.url, "STEAM")) ? "STEAM" : "PC_OTHER";
 }
 
 export function igdbCatalogEligible(game: { hypes?: number; total_rating_count?: number }, tracked = false) {
@@ -177,6 +177,27 @@ export function igdbCatalogEligible(game: { hypes?: number; total_rating_count?:
 }
 
 type CatalogExternalGame = { uid?: string; url?: string };
+type CatalogStoreProvider = "STEAM" | "PLAYSTATION" | "NINTENDO";
+
+function parsedHttpsUrl(value: string | undefined) {
+  if (!value) return null;
+  try {
+    const url = new URL(value);
+    if (url.protocol !== "https:" || url.username || url.password || url.port || url.hostname.endsWith(".")) return null;
+    return url;
+  } catch {
+    return null;
+  }
+}
+
+function officialStoreUrl(value: string | undefined, provider: CatalogStoreProvider) {
+  const url = parsedHttpsUrl(value);
+  if (!url) return null;
+  const hostname = url.hostname.toLocaleLowerCase("en-US");
+  if (provider === "STEAM") return hostname === "store.steampowered.com" ? url : null;
+  const registrableDomain = provider === "PLAYSTATION" ? "playstation.com" : "nintendo.com";
+  return hostname === registrableDomain || hostname.endsWith(`.${registrableDomain}`) ? url : null;
+}
 
 function containsCjk(value: string | null | undefined) {
   return Boolean(value && /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}]/u.test(value));
@@ -184,7 +205,8 @@ function containsCjk(value: string | null | undefined) {
 
 export function igdbCatalogSteamAppId(externalGames: CatalogExternalGame[] = []) {
   for (const external of externalGames) {
-    const fromUrl = external.url?.match(/store\.steampowered\.com\/app\/(\d+)/i)?.[1];
+    const url = officialStoreUrl(external.url, "STEAM");
+    const fromUrl = url?.pathname.match(/^\/app\/(\d+)(?:\/|$)/i)?.[1];
     if (fromUrl) return Number(fromUrl);
   }
   return null;
@@ -205,25 +227,23 @@ function catalogStoreProvider(platform: string) {
   return null;
 }
 
-function matchingStoreExternal(externalGames: CatalogExternalGame[], provider: "STEAM" | "PLAYSTATION" | "NINTENDO") {
-  const match = externalGames.find((external) => {
-    const url = external.url ?? "";
-    if (provider === "STEAM") return url.includes("store.steampowered.com");
-    if (provider === "PLAYSTATION") return url.includes("playstation.com");
-    return url.includes("nintendo.com");
-  });
+function matchingStoreExternal(externalGames: CatalogExternalGame[], provider: CatalogStoreProvider) {
+  const match = externalGames.map((external) => ({ external, url: officialStoreUrl(external.url, provider) }))
+    .find((candidate) => candidate.url);
   if (!match) return null;
-  if (provider === "STEAM") return match.url?.match(/\/app\/(\d+)/)?.[1] ?? match.uid ?? null;
-  if (provider === "PLAYSTATION") return match.uid ?? match.url?.match(/\/(?:concept|product)\/([^/?#]+)/)?.[1] ?? null;
-  return match.uid ?? match.url?.match(/\/store\/products\/([^/?#]+)/)?.[1] ?? null;
+  if (provider === "STEAM") return match.url?.pathname.match(/^\/app\/(\d+)(?:\/|$)/)?.[1] ?? match.external.uid ?? null;
+  if (provider === "PLAYSTATION") return match.external.uid ?? match.url?.pathname.match(/\/(?:concept|product)\/([^/]+)/)?.[1] ?? null;
+  return match.external.uid ?? match.url?.pathname.match(/\/store\/products\/([^/]+)/)?.[1] ?? null;
 }
 
-function catalogStoreUrl(externalGames: Array<{ url?: string }> = [], platform: string) {
-  const urls = externalGames.map((external) => external.url).filter((url): url is string => Boolean(url));
-  if (platform === "STEAM") return urls.find((url) => url.includes("store.steampowered.com")) ?? null;
-  if (platform === "PLAYSTATION") return urls.find((url) => url.includes("playstation.com")) ?? null;
-  if (platform.startsWith("NINTENDO")) return urls.find((url) => url.includes("nintendo.com")) ?? null;
-  return urls[0] ?? null;
+export function igdbCatalogStoreUrl(externalGames: Array<{ url?: string }> = [], platform: string) {
+  const provider = catalogStoreProvider(platform);
+  if (provider) {
+    return externalGames.map((external) => officialStoreUrl(external.url, provider)?.toString())
+      .find((url): url is string => Boolean(url)) ?? null;
+  }
+  return externalGames.map((external) => parsedHttpsUrl(external.url)?.toString())
+    .find((url): url is string => Boolean(url)) ?? null;
 }
 
 export async function syncIgdbReleaseCatalog(
@@ -320,7 +340,7 @@ export async function syncIgdbReleaseCatalog(
         const publishers = localized?.publishers.length
           ? localized.publishers
           : [...new Set((release.game.involved_companies ?? []).filter((company) => company.publisher).map((company) => company.company.name))];
-        const storeUrl = catalogStoreUrl(externalGames, platform);
+        const storeUrl = igdbCatalogStoreUrl(externalGames, platform);
         const providerExternalId = provider ? matchingStoreExternal(externalGames, provider) : null;
         const values = {
           ownerUserId,

@@ -5,6 +5,7 @@ import {
   igdbCatalogEligible,
   igdbCatalogMetadataPriority,
   igdbCatalogSteamAppId,
+  igdbCatalogStoreUrl,
   igdbDatePrecision
 } from "./igdb";
 
@@ -36,6 +37,19 @@ describe("release catalog normalization", () => {
   it("uses only an explicit Steam store URL as a trustworthy Steam app identity", () => {
     expect(igdbCatalogSteamAppId([{ uid: "123456", url: "https://store.steampowered.com/app/123456/demo" }])).toBe(123456);
     expect(igdbCatalogSteamAppId([{ uid: "123456", url: "https://example.test/game/123456" }])).toBeNull();
+    expect(igdbCatalogSteamAppId([{ url: "https://store.steampowered.com.evil.test/app/123456" }])).toBeNull();
+    expect(igdbCatalogSteamAppId([{ url: "https://store.steampowered.com@evil.test/app/123456" }])).toBeNull();
+    expect(igdbCalendarPlatform(6, [{ url: "https://evil.test/?next=store.steampowered.com" }])).toBe("PC_OTHER");
+  });
+
+  it("accepts only HTTPS URLs on the expected official store host", () => {
+    expect(igdbCatalogStoreUrl([{ url: "https://store.playstation.com/en-us/product/example" }], "PLAYSTATION"))
+      .toBe("https://store.playstation.com/en-us/product/example");
+    expect(igdbCatalogStoreUrl([{ url: "https://www.nintendo.com/store/products/example" }], "NINTENDO_SWITCH"))
+      .toBe("https://www.nintendo.com/store/products/example");
+    expect(igdbCatalogStoreUrl([{ url: "http://store.steampowered.com/app/42/" }], "STEAM")).toBeNull();
+    expect(igdbCatalogStoreUrl([{ url: "https://playstation.com.evil.test/product/example" }], "PLAYSTATION")).toBeNull();
+    expect(igdbCatalogStoreUrl([{ url: "https://nintendo.com@evil.test/store/products/example" }], "NINTENDO_SWITCH")).toBeNull();
   });
 
   it("selects the first CJK alternative as the Chinese catalog name", () => {
