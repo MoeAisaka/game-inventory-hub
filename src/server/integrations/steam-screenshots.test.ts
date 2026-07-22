@@ -22,7 +22,7 @@ describe("Steam screenshot parser", () => {
     const html = `<a class="profile_media_item" data-appid="42" data-publishedfileid="safe-caption">
       <div><img src="https://images.steamusercontent.com/ugc/1/SAFE/?imw=640"><q>&lt;script&gt;alert(1)&lt;/script&gt;&amp;lt;b&amp;gt;safe</q></div>
     </a>`;
-    expect(parseSteamScreenshotPage(html)[0]?.caption).toBe("alert(1)&lt;b&gt;safe");
+    expect(parseSteamScreenshotPage(html)[0]?.caption).toBe("alert(1) &lt;b&gt;safe");
   });
 
   it("extracts original media and posted time from a detail page", () => {

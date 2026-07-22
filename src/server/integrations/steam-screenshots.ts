@@ -39,9 +39,8 @@ export type SteamScreenshotDetail = {
   retrievalMode: "STEAM_HTML" | "JINA_READER";
 };
 
-function decodeHtml(value: string) {
-  return value
-    .replace(/&(?:amp|quot|#39|apos|lt|gt|#(?:x[0-9a-f]+|\d+));/gi, (entity) => {
+function decodeHtmlEntitiesOnce(value: string) {
+  return value.replace(/&(?:amp|quot|#39|apos|lt|gt|#(?:x[0-9a-f]+|\d+));/gi, (entity) => {
       const normalized = entity.toLocaleLowerCase("en-US");
       const named: Record<string, string> = {
         "&amp;": "&",
@@ -58,9 +57,24 @@ function decodeHtml(value: string) {
       return Number.isSafeInteger(numeric) && numeric >= 0 && numeric <= 0x10ffff && !(numeric >= 0xd800 && numeric <= 0xdfff)
         ? String.fromCodePoint(numeric)
         : "\ufffd";
-    })
-    .replace(/<[^>]+>/g, "")
-    .trim();
+    });
+}
+
+function htmlFragmentToText(value: string) {
+  const decoded = decodeHtmlEntitiesOnce(value);
+  let text = "";
+  let insideTag = false;
+  for (const character of decoded) {
+    if (character === "<") {
+      insideTag = true;
+    } else if (character === ">") {
+      if (insideTag && text && !text.endsWith(" ")) text += " ";
+      insideTag = false;
+    } else if (!insideTag) {
+      text += character;
+    }
+  }
+  return text.replace(/\s+/g, " ").trim();
 }
 
 function attribute(tag: string, name: string) {
@@ -68,7 +82,7 @@ function attribute(tag: string, name: string) {
 }
 
 function normalizeSteamImageUrl(raw: string) {
-  const url = new URL(decodeHtml(raw));
+  const url = new URL(decodeHtmlEntitiesOnce(raw));
   if (url.protocol !== "https:" || !["images.steamusercontent.com", "steamuserimages-a.akamaihd.net"].includes(url.hostname)) {
     throw new MediaStorageError("STEAM_IMAGE_HOST_INVALID", "Steam 截图地址不在允许列表", 502);
   }
@@ -102,7 +116,7 @@ export function parseSteamScreenshotPage(html: string): SteamScreenshotIndexItem
       publishedFileId,
       appId,
       previewUrl: rawImage ? normalizeSteamImageUrl(rawImage) : null,
-      caption: rawCaption ? decodeHtml(rawCaption) || null : null
+      caption: rawCaption ? htmlFragmentToText(rawCaption) || null : null
     });
     seen.add(publishedFileId);
   }
@@ -143,12 +157,12 @@ export function parseSteamScreenshotDetail(html: string): SteamScreenshotDetail 
     ?? html.match(/<img\b[^>]*id=["']ActualMedia["'][^>]*src=["']([^"']+)["']/i)?.[1];
   if (!rawOriginal) throw new MediaStorageError("STEAM_SCREENSHOT_DETAIL_INVALID", "Steam 截图详情缺少原图", 502);
   const detailValues = Array.from(html.matchAll(/<div\b[^>]*class=["'][^"']*detailsStatRight[^"']*["'][^>]*>([\s\S]*?)<\/div>/gi))
-    .map((match) => decodeHtml(match[1]));
+    .map((match) => htmlFragmentToText(match[1]));
   const postedText = detailValues.find((value) => /\d{1,2}\s+[A-Z][a-z]{2},\s+\d{4}\s+@/.test(value)) ?? null;
   const rawCaption = html.match(/<div\b[^>]*class=["'][^"']*screenshotDescription[^"']*["'][^>]*>([\s\S]*?)<\/div>/i)?.[1] ?? null;
   return {
     originalUrl: normalizeSteamImageUrl(rawOriginal),
-    caption: rawCaption ? decodeHtml(rawCaption).replace(/^"|"$/g, "").trim() || null : null,
+    caption: rawCaption ? htmlFragmentToText(rawCaption).replace(/^"|"$/g, "").trim() || null : null,
     postedText,
     capturedAt: postedText ? parsePostedDate(postedText) : null,
     retrievalMode: "STEAM_HTML"
