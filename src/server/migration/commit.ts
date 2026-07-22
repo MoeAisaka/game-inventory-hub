@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { and, asc, eq, inArray, isNull, sql } from "drizzle-orm";
 import { z } from "zod";
 import { writeAudit } from "@/server/audit";
+import { legacyStatusFor, persistedGameStatuses } from "@/lib/game-status";
 import { db } from "@/server/db";
 import {
   assets,
@@ -126,6 +127,9 @@ export async function commitMigrationBatch(
     const insertedGames = [];
     for (const row of gameRows) {
       const payload = gamePayload.parse(row.normalizedPayload);
+      const importedStatuses = payload.playStatus ? [payload.playStatus] : [];
+      const persistedStatuses = persistedGameStatuses(importedStatuses);
+      const isCompleted = payload.playStatus === "COMPLETED" || Boolean(payload.completedAt);
       const [game] = await transaction.insert(games).values({
         ownerUserId: actorUserId,
         nameZh: payload.nameZh,
@@ -144,15 +148,16 @@ export async function commitMigrationBatch(
         repeatable: payload.repeatable,
         releaseDate: payload.releaseDate,
         releaseDateSource: "IMPORT",
-        playStatus: payload.playStatus,
+        isCompleted,
+        playStatus: legacyStatusFor(persistedStatuses),
         startedAt: payload.startedAt,
-        completedAt: payload.completedAt,
+        completedAt: isCompleted ? payload.completedAt : null,
         acquisitionNotes: payload.acquisitionNotes,
         sourceBatchId: batchId,
         sourceRow: row.sourceRow
       }).returning({ id: games.id });
-      if (payload.playStatus) {
-        await transaction.insert(gameStatusAssignments).values({ gameId: game.id, status: payload.playStatus });
+      if (persistedStatuses.length) {
+        await transaction.insert(gameStatusAssignments).values(persistedStatuses.map((status) => ({ gameId: game.id, status })));
       }
       insertedGames.push(game);
     }

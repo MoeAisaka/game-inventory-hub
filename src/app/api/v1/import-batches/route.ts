@@ -26,7 +26,6 @@ export async function POST(request: NextRequest) {
   const id = requestId(request);
   const auth = await authorize(request, id);
   if (auth instanceof Response) return auth;
-  if (!sameOrigin(request)) return apiError("FORBIDDEN", "请求来源校验失败", 403, id);
   try {
     const parsed = createImportBatchSchema.safeParse(await safeJson(request));
     if (!parsed.success) return apiError("INVALID_REQUEST", "导入批次参数不合法", 400, id, z.flattenError(parsed.error).fieldErrors);

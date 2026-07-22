@@ -1,0 +1,402 @@
+[
+  {
+    "nameZh": "宇宙机器人",
+    "aliases": [
+      "Astro Bot",
+      "ASTRO BOT",
+      "太空机器人",
+      "阿斯特罗机器人"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "RICH",
+          "touchpad": "RICH",
+          "controllerMic": "RICH",
+          "notes": "PS5 原生 DualSense 全特性标杆。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "无 PC 版本，不适用。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "无 PC 版本，不适用。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "NONE",
+      "notes": "PS5 独占，无 PC 版本。"
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "蜘蛛侠：迈尔斯·莫拉莱斯",
+    "aliases": [
+      "Marvel's Spider-Man: Miles Morales",
+      "漫威蜘蛛侠：迈尔斯·莫拉莱斯",
+      "蜘蛛侠 迈尔斯莫拉莱斯"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "BASIC",
+          "touchpad": "BASIC",
+          "controllerMic": "NONE",
+          "notes": "PS5 原生支持深度扳机与触觉反馈。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "PC USB 可启用自适应扳机与高级触觉；其他维度待核验。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "BASIC",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "已知例外：蓝牙可触发基础扳机阻尼；高级触觉不可用。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "RT_BASIC",
+      "notes": "PS5 与 PC 均支持光追反射；PC 高端显卡可开启更高光追档位。"
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "战神：诸神黄昏",
+    "aliases": [
+      "God of War Ragnarok",
+      "God of War Ragnarök",
+      "战神5",
+      "战神：拉格纳罗克"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "BASIC",
+          "touchpad": "BASIC",
+          "controllerMic": "NONE",
+          "notes": "PS5 原生 DualSense 档案。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "官方确认核心扳机与触觉需 USB；其余维度待核验。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "官方有线要求下，不记入专属 DualSense 特性。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "NONE",
+      "notes": "PS5 与 PC 版均未提供光线追踪。"
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "最后生还者 第一部",
+    "aliases": [
+      "The Last of Us Part I",
+      "最后生还者 Part I",
+      "最后的生还者 第一部",
+      "美国末日 重制版"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "BASIC",
+          "touchpad": "BASIC",
+          "controllerMic": "NONE",
+          "notes": "PS5 原生 DualSense 档案。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "官方确认核心扳机与触觉需 USB；其余维度待核验。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "官方有线要求下，不记入专属 DualSense 特性。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "NONE",
+      "notes": null
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "剑星",
+    "aliases": [
+      "Stellar Blade",
+      "星刃",
+      "剑星 Stellar Blade"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "RICH",
+          "touchpad": "BASIC",
+          "controllerMic": "NONE",
+          "notes": "PS5 原生 DualSense 档案。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "RICH",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "官方确认核心扳机与触觉需 USB；其余维度待核验。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "官方有线要求下，不记入专属 DualSense 特性。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "UNKNOWN",
+      "notes": null
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "赛博朋克2077",
+    "aliases": [
+      "Cyberpunk 2077",
+      "赛博朋克 2077",
+      "电驭叛客2077"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "BASIC",
+          "hapticFeedback": "BASIC",
+          "controllerSpeaker": "RICH",
+          "touchpad": "BASIC",
+          "controllerMic": "NONE",
+          "notes": "PS5：扳机与触觉按活动变化，手柄扬声器播放通话及短信内容。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "BASIC",
+          "hapticFeedback": "BASIC",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "CDPR PC 外设文档要求 DualSense 使用 USB；扬声器、触摸板、麦克风待官方逐项确认。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "CDPR PC 外设文档未将 DualSense 蓝牙列为支持连接方式。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "RT_FULL_PATH_TRACING",
+      "notes": "路径光追（光线追踪：Overdrive 模式）为 PC 独占；PS5 版仅支持局部光追效果。"
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "死亡搁浅",
+    "aliases": [
+      "Death Stranding",
+      "死亡搁浅 导演剪辑版",
+      "Death Stranding Director's Cut"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "BASIC",
+          "hapticFeedback": "RICH",
+          "controllerSpeaker": "RICH",
+          "touchpad": "RICH",
+          "controllerMic": "NONE",
+          "notes": "PS5 导演剪辑版：高级触觉、手柄扬声器与触摸板有明确玩法。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "UNKNOWN",
+          "hapticFeedback": "UNKNOWN",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "PC USB 五维能力待逐项证据核验。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "UNKNOWN",
+          "hapticFeedback": "UNKNOWN",
+          "controllerSpeaker": "UNKNOWN",
+          "touchpad": "UNKNOWN",
+          "controllerMic": "UNKNOWN",
+          "notes": "PC 蓝牙五维能力待逐项证据核验。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "NONE",
+      "notes": null
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "对马岛之魂",
+    "aliases": [
+      "Ghost of Tsushima",
+      "对马岛之鬼",
+      "对马岛之魂 导演剪辑版",
+      "Ghost of Tsushima Director's Cut"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "BASIC",
+          "hapticFeedback": "BASIC",
+          "controllerSpeaker": "BASIC",
+          "touchpad": "RICH",
+          "controllerMic": "BASIC",
+          "notes": "PS5：触摸板用于指引之风与收刀等交互。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "BASIC",
+          "hapticFeedback": "BASIC",
+          "controllerSpeaker": "BASIC",
+          "touchpad": "RICH",
+          "controllerMic": "BASIC",
+          "notes": "PC 版官方说明需 USB 才能启用完整 DualSense 特性。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "PC 版官方说明完整 DualSense 特性不支持蓝牙连接。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "NONE",
+      "notes": null
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  },
+  {
+    "nameZh": "艾尔登法环",
+    "aliases": [
+      "Elden Ring",
+      "老头环",
+      "埃尔登法环"
+    ],
+    "dualsense": {
+      "profiles": [
+        {
+          "environment": "PS5_CONSOLE",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "无 DualSense 专属适配。"
+        },
+        {
+          "environment": "PC_USB",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "无 DualSense 专属适配。"
+        },
+        {
+          "environment": "PC_BLUETOOTH",
+          "adaptiveTriggers": "NONE",
+          "hapticFeedback": "NONE",
+          "controllerSpeaker": "NONE",
+          "touchpad": "NONE",
+          "controllerMic": "NONE",
+          "notes": "无 DualSense 专属适配。"
+        }
+      ]
+    },
+    "rayTracing": {
+      "level": "RT_BASIC",
+      "notes": "光追为环境阴影／环境光遮蔽等基础效果（PS5 与 PC 均支持，默认关闭），对画面影响有限。"
+    },
+    "source": "编辑维护（公开常识整理，2026-07）"
+  }
+]

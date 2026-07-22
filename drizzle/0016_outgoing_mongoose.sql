@@ -1,0 +1,2 @@
+ALTER TABLE "game_status_assignments" ADD CONSTRAINT "game_status_assignments_completion_not_persisted" CHECK ("game_status_assignments"."status" <> 'COMPLETED');--> statement-breakpoint
+ALTER TABLE "games" ADD CONSTRAINT "games_completion_not_legacy_status" CHECK ("games"."play_status" IS NULL OR "games"."play_status" <> 'COMPLETED');

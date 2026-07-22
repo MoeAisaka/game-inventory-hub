@@ -1,0 +1,2 @@
+ALTER TABLE "inventory_products" ADD COLUMN "product_rating" integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE "inventory_products" ADD CONSTRAINT "inventory_products_product_rating_range" CHECK ("inventory_products"."product_rating" BETWEEN 0 AND 5);

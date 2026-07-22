@@ -12,7 +12,7 @@ export const pool = globalDatabase.gameInventoryPool ?? new Pool({
   idleTimeoutMillis: 30_000,
   statement_timeout: 5_000,
   query_timeout: 6_000,
-  application_name: "game-inventory-hub"
+  application_name: "game-inventory-system"
 });
 
 if (process.env.NODE_ENV !== "production") globalDatabase.gameInventoryPool = pool;

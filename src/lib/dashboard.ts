@@ -65,6 +65,7 @@ export type DashboardData = {
     total: number;
     matched: number;
     unmatched: number;
+    catalog: number;
     ignored: number;
     coveragePercent: number;
   };

@@ -1,7 +1,13 @@
 FROM node:22-bookworm-slim AS dependencies
 WORKDIR /app
 COPY package.json package-lock.json ./
-RUN npm ci --no-audit --no-fund
+COPY integrations/playstation-sidecar/package.json integrations/playstation-sidecar/package-lock.json ./integrations/playstation-sidecar/
+COPY integrations/nintendo-sidecar/package.json integrations/nintendo-sidecar/package-lock.json ./integrations/nintendo-sidecar/
+COPY integrations/steam-family-sidecar/package.json integrations/steam-family-sidecar/package-lock.json ./integrations/steam-family-sidecar/
+RUN npm ci --no-audit --no-fund \
+  && npm --prefix integrations/playstation-sidecar ci --no-audit --no-fund \
+  && npm --prefix integrations/nintendo-sidecar ci --no-audit --no-fund \
+  && npm --prefix integrations/steam-family-sidecar ci --no-audit --no-fund
 
 FROM dependencies AS operator
 WORKDIR /app

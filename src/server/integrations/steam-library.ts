@@ -12,6 +12,8 @@ import {
   steamLibraryItems
 } from "@/server/db/schema";
 import { steamEnglishNameCandidate } from "./steam";
+import { reconcileWishlistForGames } from "@/server/services/game-wishlist";
+import { buildSteamMatchWorkbench } from "@/lib/steam-match-workbench";
 
 export const resolveSteamLibrarySchema = z.discriminatedUnion("action", [
   z.object({ action: z.literal("MATCH"), gameId: z.uuid() }),
@@ -27,32 +29,34 @@ export class SteamLibraryResolutionError extends Error {
 
 export async function steamLibraryOverview(ownerUserId: string) {
   const [items, localGames] = await Promise.all([
-    db.select().from(steamLibraryItems).where(and(
-      eq(steamLibraryItems.ownerUserId, ownerUserId),
-      eq(steamLibraryItems.isOwned, true)
-    )).orderBy(desc(steamLibraryItems.playtimeMinutes), asc(steamLibraryItems.name)),
+    db.select().from(steamLibraryItems).where(
+      eq(steamLibraryItems.ownerUserId, ownerUserId)
+    ).orderBy(desc(steamLibraryItems.playtimeMinutes), asc(steamLibraryItems.name)),
     db.select({
       id: games.id,
       nameZh: games.nameZh,
       nameEn: games.nameEn,
       platform: games.platform,
-      steamAppId: games.steamAppId
+      steamAppId: games.steamAppId,
+      searchAliases: games.searchAliases
     }).from(games).where(and(
       eq(games.ownerUserId, ownerUserId),
       isNull(games.deletedAt)
     )).orderBy(asc(games.nameZh))
   ]);
+  const activeItems = items.filter((item) => item.isOwned);
+  const unresolved = activeItems.filter((item) => item.matchStatus === "UNMATCHED");
+  const workbench = buildSteamMatchWorkbench(unresolved, localGames);
   const summary = {
-    total: items.length,
-    matched: items.filter((item) => item.matchStatus === "MATCHED").length,
-    unmatched: items.filter((item) => item.matchStatus === "UNMATCHED").length,
-    ignored: items.filter((item) => item.matchStatus === "IGNORED").length
+    total: activeItems.length,
+    owned: activeItems.filter((item) => item.licenseType === "OWNED").length,
+    familyShared: activeItems.filter((item) => item.licenseType === "FAMILY_SHARED").length,
+    matched: activeItems.filter((item) => item.matchStatus === "MATCHED").length,
+    unmatched: unresolved.length,
+    ignored: activeItems.filter((item) => item.matchStatus === "IGNORED").length,
+    unavailableFamily: items.filter((item) => !item.isOwned && item.licenseType === "FAMILY_SHARED").length
   };
-  return {
-    summary,
-    unresolved: items.filter((item) => item.matchStatus === "UNMATCHED").slice(0, 200),
-    localGames
-  };
+  return { summary, workbench };
 }
 
 export async function resolveSteamLibraryItem(
@@ -83,14 +87,16 @@ export async function resolveSteamLibraryItem(
 
     let target: typeof games.$inferSelect;
     if (input.action === "CREATE") {
-      const initialStatus = item.playtimeMinutes > 0 ? "PLAYING" as const : "BACKLOG" as const;
+      const initialStatus = item.licenseType === "FAMILY_SHARED"
+        ? "UNPLANNED" as const
+        : item.playtimeMinutes > 0 ? "PLAYING" as const : "BACKLOG" as const;
       [target] = await transaction.insert(games).values({
         ownerUserId,
         nameZh: item.name,
         platform: "STEAM",
         platformSource: "STEAM",
         mediaType: "DIGITAL",
-        ownershipStatus: "OWNED",
+        ownershipStatus: item.licenseType === "OWNED" ? "OWNED" : "FAMILY_SHARED",
         playStatus: initialStatus,
         playtimeMinutesSynced: item.playtimeMinutes,
         lastPlayedAt: item.lastPlayedAt,
@@ -124,7 +130,9 @@ export async function resolveSteamLibraryItem(
         coverUrlSource: target.coverUrl ? target.coverUrlSource : (item.iconUrl ? "STEAM" : target.coverUrlSource),
         platform: target.platform ?? "STEAM",
         platformSource: target.platform ? target.platformSource : "STEAM",
-        ownershipStatus: target.ownershipStatus ?? "OWNED",
+        ownershipStatus: target.ownershipStatus === "OWNED"
+          ? "OWNED"
+          : item.licenseType === "OWNED" ? "OWNED" : "FAMILY_SHARED",
         nameEn: target.nameEn ?? steamEnglishNameCandidate(item.name, target.nameZh),
         nameEnSource: target.nameEn
           ? target.nameEnSource
@@ -155,12 +163,39 @@ export async function resolveSteamLibraryItem(
       gameId: target.id,
       source: "STEAM",
       externalAcquisitionId: String(item.steamAppId),
-      isOwned: true,
-      details: { steamAppId: item.steamAppId, title: item.name },
+      channel: item.licenseType === "FAMILY_SHARED" ? "FAMILY_SHARED" : "SELF_PURCHASED",
+      platform: "STEAM",
+      availability: item.isOwned ? "AVAILABLE" : "TEMPORARILY_UNAVAILABLE",
+      offlineCapable: item.licenseType === "FAMILY_SHARED" ? false : null,
+      isOwned: item.licenseType === "OWNED",
+      details: {
+        steamAppId: item.steamAppId,
+        title: item.name,
+        accessType: item.licenseType,
+        ownerSteamIds: item.licenseOwnerSteamIds,
+        familyGroupId: item.familyGroupId
+      },
       lastConfirmedAt: now
     }).onConflictDoUpdate({
       target: [gameAcquisitions.ownerUserId, gameAcquisitions.source, gameAcquisitions.externalAcquisitionId],
-      set: { gameId: target.id, isOwned: true, lastConfirmedAt: now, updatedAt: now }
+      set: {
+        gameId: target.id,
+        isOwned: item.licenseType === "OWNED",
+        channel: item.licenseType === "FAMILY_SHARED" ? "FAMILY_SHARED" : "SELF_PURCHASED",
+        platform: "STEAM",
+        availability: item.isOwned ? "AVAILABLE" : "TEMPORARILY_UNAVAILABLE",
+        offlineCapable: item.licenseType === "FAMILY_SHARED" ? false : null,
+        details: {
+          steamAppId: item.steamAppId,
+          title: item.name,
+          accessType: item.licenseType,
+          ownerSteamIds: item.licenseOwnerSteamIds,
+          familyGroupId: item.familyGroupId
+        },
+        lastConfirmedAt: now,
+        updatedAt: now,
+        version: sql`${gameAcquisitions.version} + 1`
+      }
     });
     await transaction.insert(gameActivitySnapshots).values({
       ownerUserId,
@@ -208,7 +243,9 @@ export async function resolveSteamLibraryItem(
         playtimeLastChangedAt: totals.playtimeMinutes !== existing.playtimeMinutesSynced
           ? now
           : existing.playtimeLastChangedAt,
-        ownershipStatus: "OWNED",
+        ownershipStatus: existing.ownershipStatus === "OWNED"
+          ? "OWNED"
+          : item.licenseType === "OWNED" ? "OWNED" : "FAMILY_SHARED",
         updatedAt: new Date(),
         version: sql`${games.version} + 1`
       }).where(eq(games.id, gameId)).returning())[0];
@@ -217,6 +254,7 @@ export async function resolveSteamLibraryItem(
     const previousGameId = item.matchedGameId && item.matchedGameId !== target.id ? item.matchedGameId : null;
     const refreshedTarget = await aggregate(target.id);
     if (previousGameId) await aggregate(previousGameId);
+    await reconcileWishlistForGames(transaction, ownerUserId, [target.id, ...(previousGameId ? [previousGameId] : [])], now);
     return { item: updatedItem, game: refreshedTarget ?? target, action: input.action };
   });
 

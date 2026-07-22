@@ -1,0 +1,11 @@
+{
+  "name": "steam-family-sidecar",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "preview": "node steam-family-sync.mjs --preview",
+    "sync": "node steam-family-sync.mjs",
+    "test": "node --test steam-family-sync.test.mjs"
+  }
+}

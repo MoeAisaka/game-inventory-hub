@@ -3,7 +3,9 @@ import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { currentSession } from "@/server/auth/current";
 import { gameQuerySchema, listGames } from "@/server/services/games";
+import { getHardwareProfile } from "@/server/services/preferences";
 import { GameManager } from "./game-manager";
+import { gameGenreLabels, gameGenreValues } from "@/lib/game-genres";
 import { gameStatusLabels, gameStatusValues } from "@/lib/game-status";
 
 export const dynamic = "force-dynamic";
@@ -30,12 +32,16 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
     q: single(raw.q) ?? "",
     status: raw.status ?? [],
     platform: raw.platform ?? [],
-    sort: single(raw.sort) ?? "queue_asc",
+    genre: raw.genre ?? [],
+    sort: single(raw.sort) ?? "updated_desc",
     page: single(raw.page) ?? "1",
     pageSize: "30",
     includeDeleted: "false"
   });
-  const result = await listGames(session.userId, parsed);
+  const [result, hardware] = await Promise.all([
+    listGames(session.userId, parsed),
+    getHardwareProfile(session.userId)
+  ]);
   const initialGames = result.games.map((game) => ({
     ...game,
     lastPlayedAt: game.lastPlayedAt?.toISOString() ?? null,
@@ -50,28 +56,32 @@ export default async function GamesPage({ searchParams }: { searchParams: Promis
     const query = new URLSearchParams({ q: parsed.q, sort: parsed.sort, page: String(page) });
     for (const status of parsed.status) query.append("status", status);
     for (const platform of parsed.platform) query.append("platform", platform);
+    for (const genre of parsed.genre) query.append("genre", genre);
     return `?${query.toString()}`;
   };
-  const hasFilters = Boolean(parsed.q || parsed.status.length || parsed.platform.length);
+  const hasFilters = Boolean(parsed.q || parsed.status.length || parsed.platform.length || parsed.genre.length);
   return (
     <AppShell username={session.username} active="/games">
-      <header className="page-header"><div><span className="eyebrow">GAME LIBRARY</span><h1>游戏库</h1><p>集中维护名称、发售与评分信息；待玩游戏按自定义顺序进入队列。</p></div></header>
+      <header className="page-header"><div><span className="eyebrow">GAME LIBRARY</span><h1>游戏库</h1><p>集中维护名称、发售、评分与游玩事实；入手渠道和双场景队列在“游玩规划”统一管理。</p></div><a className="secondary-button compact" href="/play">打开游玩规划</a></header>
       <section className="filter-bar" aria-label="筛选游戏">
-        <form className="filter-form" method="get">
-          <label className="search-field"><Search size={15} /><input name="q" defaultValue={parsed.q} placeholder="搜索中英文名称或备注" /></label>
+        <form className="filter-form games-filter-form" method="get">
+          <label className="search-field"><Search size={15} /><input name="q" aria-label="搜索游戏" defaultValue={parsed.q} placeholder="搜索中英名称、简繁译名或平台别名" /></label>
           <details className="status-filter-menu"><summary>{parsed.status.length ? `状态 ${parsed.status.length} 项` : "全部状态"}</summary><div role="group" aria-label="状态筛选"><p>同组满足任一状态</p>{gameStatusValues.map((status) => <label key={status}><input type="checkbox" name="status" value={status} defaultChecked={parsed.status.includes(status)} />{gameStatusLabels[status]}</label>)}</div></details>
           <details className="status-filter-menu"><summary>{parsed.platform.length ? `平台 ${parsed.platform.length} 项` : "全部平台"}</summary><div role="group" aria-label="平台筛选"><p>同组满足任一平台</p>{platformOptions.map(([value, label]) => <label key={value}><input type="checkbox" name="platform" value={value} defaultChecked={parsed.platform.includes(value)} />{label}</label>)}</div></details>
+          <details className="status-filter-menu"><summary>{parsed.genre.length ? `类型 ${parsed.genre.length} 项` : "全部类型"}</summary><div role="group" aria-label="类型筛选"><p>匹配主类型或子标签</p>{gameGenreValues.map((genre) => <label key={genre}><input type="checkbox" name="genre" value={genre} defaultChecked={parsed.genre.includes(genre)} />{gameGenreLabels[genre]}</label>)}</div></details>
           <select name="sort" defaultValue={parsed.sort} aria-label="排序">
-            <option value="queue_asc">待玩队列</option><option value="updated_desc">最近更新</option><option value="name_asc">名称</option><option value="release_asc">发售日期</option>
+            <option value="updated_desc">最近更新</option><option value="name_asc">名称</option><option value="release_asc">发售日期</option>
           </select>
-          <button className="secondary-button" type="submit">筛选</button>
+          <button className="secondary-button" type="submit"><Search size={14} />搜索 / 筛选</button>
           {hasFilters ? <a className="text-button filter-reset" href="/games">重置</a> : null}
         </form>
+        {hasFilters ? <div className="active-filter-summary" aria-live="polite"><strong>当前条件：</strong>{parsed.q ? <span>搜索：{parsed.q}</span> : null}{parsed.status.map((status) => <span key={status}>状态：{gameStatusLabels[status]}</span>)}{parsed.platform.map((platform) => <span key={platform}>平台：{platformOptions.find(([value]) => value === platform)?.[1] ?? platform}</span>)}{parsed.genre.map((genre) => <span key={genre}>类型：{gameGenreLabels[genre]}</span>)}<a className="text-button" href="/games">清空全部</a><small>“已游玩”表示存在游玩记录且最后游玩已超过 48 小时，不等同于“已通关”。</small></div> : null}
       </section>
-      <GameManager key={JSON.stringify({ q: parsed.q, status: parsed.status, platform: parsed.platform, sort: parsed.sort })} initialGames={initialGames} total={result.total} selectionQuery={{
+      <GameManager key={JSON.stringify({ q: parsed.q, status: parsed.status, platform: parsed.platform, genre: parsed.genre, sort: parsed.sort })} initialGames={initialGames} total={result.total} hardware={hardware} selectionQuery={{
         q: parsed.q,
         status: parsed.status,
         platform: parsed.platform,
+        genre: parsed.genre,
         sort: parsed.sort
       }} />
       <nav className="pagination" aria-label="分页">

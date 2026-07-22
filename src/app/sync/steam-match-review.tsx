@@ -1,11 +1,21 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { Link2, Plus, Search, X } from "lucide-react";
-import { useRouter } from "next/navigation";
+import {
+  AlertTriangle,
+  ChevronLeft,
+  ChevronRight,
+  Clock3,
+  Gamepad2,
+  Library,
+  Link2,
+  Search,
+  ShieldAlert
+} from "lucide-react";
 import { formatShanghaiDateTime } from "@/lib/date-format";
+import type { SteamReviewCandidateRisk, SteamReviewLane } from "@/lib/steam-match-workbench";
 
-type SteamItem = {
+type SteamReviewItem = {
   steamAppId: number;
   name: string;
   playtimeMinutes: number;
@@ -13,99 +23,179 @@ type SteamItem = {
   lastPlayedAt: string | null;
   iconUrl: string | null;
   matchMethod: string;
+  licenseType: "OWNED" | "FAMILY_SHARED";
+  lane: SteamReviewLane;
+  hasPlayHistory: boolean;
+  suspectedNonGame: boolean;
+  candidates: Array<{
+    gameId: string;
+    nameZh: string;
+    nameEn: string | null;
+    platform: string | null;
+    steamAppId: number | null;
+    score: number;
+    margin: number;
+    matchedName: string;
+    risks: SteamReviewCandidateRisk[];
+  }>;
 };
 
-type LocalGame = {
-  id: string;
-  nameZh: string;
-  nameEn: string | null;
-  platform: string | null;
-  steamAppId: number | null;
+type WorkbenchCounts = Record<SteamReviewLane, number> & { actionable: number };
+
+const laneOptions: Array<{
+  value: SteamReviewLane;
+  label: string;
+  shortLabel: string;
+  description: string;
+}> = [
+  { value: "OWNED_MISSING", label: "自购缺失", shortLabel: "自购", description: "优先补齐正式目录" },
+  { value: "REVIEW", label: "建议复核", shortLabel: "复核", description: "有游玩历史或名称候选" },
+  { value: "NON_GAME", label: "疑似非游戏", shortLabel: "非游戏", description: "测试服与独立测试客户端" },
+  { value: "CATALOG", label: "家庭共享目录", shortLabel: "目录", description: "保留发现，不制造待办" }
+];
+
+const riskLabels: Record<SteamReviewCandidateRisk, string> = {
+  SERIES_NUMBER_CONFLICT: "系列序号冲突",
+  TARGET_ALREADY_HAS_STEAM_APP: "目标已有其他 App ID"
 };
 
-async function api(path: string, body: unknown) {
-  const response = await fetch(path, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body)
-  });
-  const payload = await response.json();
-  if (!response.ok) throw new Error(payload.error?.message ?? "操作失败");
-  return payload.data;
+function playtime(minutes: number) {
+  if (minutes <= 0) return "尚无时长";
+  if (minutes < 60) return `${minutes} 分钟`;
+  const value = minutes / 60;
+  return `${value.toFixed(minutes % 60 === 0 ? 0 : 1)} 小时`;
 }
 
-function hours(minutes: number) {
-  return `${(minutes / 60).toFixed(minutes % 60 === 0 ? 0 : 1)} 小时`;
+function reason(item: SteamReviewItem) {
+  if (item.lane === "OWNED_MISSING") return "自购许可尚未关联正式游戏";
+  if (item.lane === "NON_GAME") return "名称符合测试客户端或测试服特征";
+  if (item.hasPlayHistory && item.candidates.length) return "存在游玩历史，并找到名称候选";
+  if (item.hasPlayHistory) return "存在游玩历史，值得单独确认";
+  if (item.candidates.length) return "找到高相似候选，仅供人工判断";
+  return "当前无兴趣与游玩信号，作为可玩目录保留";
 }
 
 export function SteamMatchReview({
   summary,
-  items,
-  localGames
+  counts,
+  items
 }: {
-  summary: { total: number; matched: number; unmatched: number; ignored: number };
-  items: SteamItem[];
-  localGames: LocalGame[];
+  summary: {
+    total: number;
+    owned: number;
+    familyShared: number;
+    matched: number;
+    unmatched: number;
+    ignored: number;
+    unavailableFamily: number;
+  };
+  counts: WorkbenchCounts;
+  items: SteamReviewItem[];
 }) {
-  const router = useRouter();
-  const [selected, setSelected] = useState<SteamItem | null>(null);
+  const initialLane = laneOptions.find((option) => counts[option.value] > 0)?.value ?? "CATALOG";
+  const [lane, setLane] = useState<SteamReviewLane>(initialLane);
   const [query, setQuery] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
-  const [message, setMessage] = useState("");
-  const candidates = useMemo(() => {
+  const [sort, setSort] = useState<"RECOMMENDED" | "PLAYTIME" | "NAME">("RECOMMENDED");
+  const [page, setPage] = useState(1);
+  const pageSize = lane === "CATALOG" ? 30 : 18;
+  const filtered = useMemo(() => {
     const normalized = query.trim().toLocaleLowerCase("zh-CN");
-    return localGames.filter((game) => {
-      if (!normalized) return true;
-      return [game.nameZh, game.nameEn, game.platform].some((value) => value?.toLocaleLowerCase("zh-CN").includes(normalized));
-    }).slice(0, 30);
-  }, [localGames, query]);
+    const result = items.filter((item) => item.lane === lane && (!normalized || [
+      item.name,
+      String(item.steamAppId),
+      ...item.candidates.flatMap((candidate) => [candidate.nameZh, candidate.nameEn ?? ""])
+    ].some((value) => value.toLocaleLowerCase("zh-CN").includes(normalized))));
+    if (sort === "PLAYTIME") return result.toSorted((left, right) => right.playtimeMinutes - left.playtimeMinutes || left.name.localeCompare(right.name, "zh-CN"));
+    if (sort === "NAME") return result.toSorted((left, right) => left.name.localeCompare(right.name, "zh-CN"));
+    return result;
+  }, [items, lane, query, sort]);
+  const pageCount = Math.max(1, Math.ceil(filtered.length / pageSize));
+  const currentPage = Math.min(page, pageCount);
+  const visibleItems = filtered.slice((currentPage - 1) * pageSize, currentPage * pageSize);
 
-  async function resolve(item: SteamItem, action: "MATCH" | "CREATE" | "IGNORE", gameId?: string) {
-    if (action === "CREATE" && !window.confirm(`将“${item.name}”作为新游戏加入游戏库？`)) return;
-    if (action === "IGNORE" && !window.confirm(`忽略“${item.name}”？下次同步仍会保留忽略状态。`)) return;
-    setBusy(`${item.steamAppId}:${action}`);
-    setMessage("");
-    try {
-      await api(`/api/v1/steam-library/${item.steamAppId}/resolve`, action === "MATCH" ? { action, gameId } : { action });
-      setMessage(action === "MATCH" ? "Steam记录已关联到本地游戏。" : action === "CREATE" ? "已从Steam记录创建新游戏。" : "已忽略该Steam记录。");
-      setSelected(null);
-      setQuery("");
-      router.refresh();
-    } catch (error) {
-      setMessage(error instanceof Error ? error.message : "操作失败");
-    } finally {
-      setBusy(null);
-    }
+  function chooseLane(nextLane: SteamReviewLane) {
+    setLane(nextLane);
+    setPage(1);
+    setQuery("");
+    setSort("RECOMMENDED");
   }
 
   if (summary.total === 0) return null;
-  return <>
-    <section className="content-section steam-review">
-      <div className="section-heading">
-        <div><h2>Steam 游戏记录匹配</h2><p>Steam时长与最近游玩时间只写入同步字段；本地手工字段保持优先。</p></div>
-        <div className="steam-summary"><span className="result success">已匹配 {summary.matched}</span><span className="result warning">待处理 {summary.unmatched}</span><span className="result neutral">已忽略 {summary.ignored}</span></div>
+  return <section className="content-section steam-workbench">
+    <div className="steam-workbench-hero">
+      <div className="steam-workbench-copy">
+        <span className="eyebrow">STEAM MATCHING WORKBENCH</span>
+        <h2>把真正的决定，从目录噪音里分离出来。</h2>
+        <p>当前只读预览。候选只提供判断依据，不会自动关联、新建或忽略任何游戏。</p>
       </div>
-      {message ? <div className="inline-alert">{message}</div> : null}
-      {items.length ? <div className="table-wrap"><table><thead><tr><th>Steam游戏</th><th>累计时长</th><th>最近游玩</th><th>未自动匹配原因</th><th>操作</th></tr></thead><tbody>{items.map((item) => <tr key={item.steamAppId}>
-        <td><div className="steam-game-cell">{item.iconUrl ? <span className="steam-icon" aria-hidden="true" style={{ backgroundImage: `url(${item.iconUrl})` }} /> : <span className="cover-placeholder" />}<div><strong>{item.name}</strong><small>App ID {item.steamAppId}</small></div></div></td>
-        <td>{hours(item.playtimeMinutes)}{item.recentPlaytimeMinutes ? <small className="cell-note">近两周 {hours(item.recentPlaytimeMinutes)}</small> : null}</td>
-        <td>{item.lastPlayedAt ? formatShanghaiDateTime(item.lastPlayedAt) : "从未"}</td>
-        <td><span className="result warning">{item.matchMethod === "AMBIGUOUS_EXACT_TITLE" ? "同名记录不唯一" : "没有唯一同名记录"}</span></td>
-        <td><div className="steam-row-actions"><button className="secondary-button" disabled={busy !== null} onClick={() => { setSelected(item); setQuery(""); }}><Link2 size={14} />关联已有</button><button className="secondary-button" disabled={busy !== null} onClick={() => resolve(item, "CREATE")}><Plus size={14} />新建</button><button className="text-button" disabled={busy !== null} onClick={() => resolve(item, "IGNORE")}>忽略</button></div></td>
-      </tr>)}</tbody></table></div> : <div className="empty-state">Steam游戏记录已经全部处理。</div>}
-    </section>
-    {selected ? <div className="modal-backdrop" role="presentation" onMouseDown={(event) => { if (event.currentTarget === event.target && !busy) setSelected(null); }}>
-      <section className="modal-panel narrow" role="dialog" aria-modal="true" aria-labelledby="steam-match-title">
-        <header><div><span className="eyebrow">MANUAL MATCH</span><h2 id="steam-match-title">关联“{selected.name}”</h2></div><button className="icon-button" aria-label="关闭" disabled={busy !== null} onClick={() => setSelected(null)}><X size={16} /></button></header>
-        <div className="steam-match-body">
-          <label className="search-field"><Search size={16} /><input autoFocus value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索中文名、英文名或平台" /></label>
-          <div className="steam-candidate-list">{candidates.length ? candidates.map((game) => <button key={game.id} disabled={busy !== null} onClick={() => resolve(selected, "MATCH", game.id)}><span><strong>{game.nameZh}</strong><small>{[
-            game.nameEn,
-            game.platform,
-            game.steamAppId !== null ? `主 App ${game.steamAppId} · 可追加关联` : null
-          ].filter(Boolean).join(" · ") || "未设置平台"}</small></span><Link2 size={15} /></button>) : <div className="empty-state">没有可关联的本地游戏。</div>}</div>
-        </div>
-      </section>
-    </div> : null}
-  </>;
+      <div className="steam-preview-status"><ShieldAlert size={16} /><span><strong>预览模式</strong><small>0 项生产写入</small></span></div>
+    </div>
+
+    <div className="steam-workbench-metrics" aria-label="Steam 匹配概览">
+      <div><span>需要决策</span><strong>{counts.actionable}</strong><small>自购、复核与疑似非游戏</small></div>
+      <div><span>仅目录</span><strong>{counts.CATALOG}</strong><small>可搜索，不制造待办</small></div>
+      <div><span>已经关联</span><strong>{summary.matched}</strong><small>当前可用记录</small></div>
+      <div><span>当前不可用</span><strong>{summary.unavailableFamily}</strong><small>保留历史，不参与处理</small></div>
+    </div>
+
+    <div className="steam-lane-tabs" role="tablist" aria-label="匹配处理泳道">
+      {laneOptions.map((option) => <button
+        key={option.value}
+        type="button"
+        role="tab"
+        aria-selected={lane === option.value}
+        className={lane === option.value ? "active" : ""}
+        onClick={() => chooseLane(option.value)}
+      >
+        <span><strong>{option.label}</strong><small>{option.description}</small></span>
+        <b>{counts[option.value]}</b>
+      </button>)}
+    </div>
+
+    <div className="steam-workbench-toolbar">
+      <label className="search-field steam-workbench-search">
+        <Search size={16} />
+        <input
+          value={query}
+          onChange={(event) => { setQuery(event.target.value); setPage(1); }}
+          placeholder={`搜索${laneOptions.find((option) => option.value === lane)?.shortLabel ?? "当前"}记录、App ID 或候选`}
+        />
+      </label>
+      <label className="steam-sort-field"><span>排序</span><select value={sort} onChange={(event) => { setSort(event.target.value as typeof sort); setPage(1); }}>
+        <option value="RECOMMENDED">建议顺序</option>
+        <option value="PLAYTIME">游玩时长</option>
+        <option value="NAME">名称</option>
+      </select></label>
+      <span className="steam-result-count">{filtered.length} 项</span>
+    </div>
+
+    {visibleItems.length ? <div className={`steam-review-grid ${lane === "CATALOG" ? "catalog" : ""}`}>
+      {visibleItems.map((item) => {
+        const candidate = item.candidates[0];
+        return <article className="steam-review-card" key={item.steamAppId}>
+          <div className="steam-review-card-head">
+            {item.iconUrl ? <span className="steam-review-icon" aria-hidden="true" style={{ backgroundImage: `url(${item.iconUrl})` }} /> : <span className="steam-review-icon placeholder" aria-hidden="true"><Gamepad2 size={19} /></span>}
+            <div className="steam-review-title"><h3>{item.name}</h3><p>App {item.steamAppId} · {item.licenseType === "OWNED" ? "自购" : "家庭共享"}</p></div>
+          </div>
+          <p className="steam-review-reason">{reason(item)}</p>
+          <div className="steam-review-facts">
+            <span><Clock3 size={14} />{playtime(item.playtimeMinutes)}</span>
+            <span><Library size={14} />{item.lastPlayedAt ? formatShanghaiDateTime(item.lastPlayedAt) : "从未启动"}</span>
+          </div>
+          {candidate ? <div className="steam-candidate-preview">
+            <div className="steam-candidate-heading"><span><Link2 size={14} />候选预览</span><b>{candidate.score.toFixed(candidate.score % 1 === 0 ? 0 : 1)}%</b></div>
+            <strong>{candidate.nameZh}</strong>
+            <small>{[candidate.nameEn, candidate.platform, candidate.steamAppId !== null ? `App ${candidate.steamAppId}` : null].filter(Boolean).join(" · ") || "本地正式目录"}</small>
+            {candidate.risks.length ? <div className="steam-risk-list">{candidate.risks.map((risk) => <span key={risk}><AlertTriangle size={12} />{riskLabels[risk]}</span>)}</div> : <p className="steam-candidate-note">无硬冲突，但仍需人工确认。</p>}
+          </div> : null}
+        </article>;
+      })}
+    </div> : <div className="empty-state">当前泳道没有符合搜索条件的记录。</div>}
+
+    {pageCount > 1 ? <nav className="steam-pagination" aria-label="Steam 匹配记录翻页">
+      <button type="button" aria-label="上一页" disabled={currentPage <= 1} onClick={() => setPage((value) => Math.max(1, value - 1))}><ChevronLeft size={16} /></button>
+      <span>第 {currentPage} / {pageCount} 页</span>
+      <button type="button" aria-label="下一页" disabled={currentPage >= pageCount} onClick={() => setPage((value) => Math.min(pageCount, value + 1))}><ChevronRight size={16} /></button>
+    </nav> : null}
+  </section>;
 }

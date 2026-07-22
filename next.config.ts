@@ -14,7 +14,7 @@ const securityHeaders = [
 
 const nextConfig: NextConfig = {
   output: "standalone",
-  serverExternalPackages: ["argon2", "pg"],
+  serverExternalPackages: ["argon2", "pg", "sharp"],
   async headers() {
     return [{ source: "/(.*)", headers: securityHeaders }];
   }

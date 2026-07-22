@@ -5,6 +5,7 @@ import {
   boolean,
   check,
   date,
+  foreignKey,
   index,
   integer,
   jsonb,
@@ -20,6 +21,7 @@ import {
 
 export const auditOutcome = pgEnum("audit_outcome", ["SUCCESS", "FAILURE"]);
 export const fileStatus = pgEnum("file_status", ["STAGED", "READY", "MISSING"]);
+export const gameMediaSource = pgEnum("game_media_source", ["MANUAL", "STEAM"]);
 export const importBatchStatus = pgEnum("import_batch_status", [
   "PENDING",
   "PARSED",
@@ -41,12 +43,14 @@ export const gamePlayStatus = pgEnum("game_play_status", [
 export const gameRecordStatus = pgEnum("game_record_status", [
   "BACKLOG",
   "PLAYING",
+  "PLAYED",
   "PAUSED",
   "COMPLETED",
   "ABANDONED",
   "UNPLANNED",
   "UNRELEASED",
-  "TO_BUY"
+  "TO_BUY",
+  "WISHLIST"
 ]);
 export const dataSource = pgEnum("data_source", [
   "MANUAL",
@@ -58,7 +62,8 @@ export const dataSource = pgEnum("data_source", [
   "WIKIDATA",
   "STEAMGRIDDB",
   "PLAYSTATION",
-  "NINTENDO"
+  "NINTENDO",
+  "WEB"
 ]);
 export const gameRatingSource = pgEnum("game_rating_source", [
   "MANUAL",
@@ -82,6 +87,21 @@ export const externalProvider = pgEnum("external_provider", [
 export const externalAccountStatus = pgEnum("external_account_status", ["ACTIVE", "DISABLED", "ERROR"]);
 export const syncJobStatus = pgEnum("sync_job_status", ["PENDING", "RUNNING", "SUCCEEDED", "PARTIAL", "FAILED"]);
 export const steamLibraryMatchStatus = pgEnum("steam_library_match_status", ["MATCHED", "UNMATCHED", "IGNORED"]);
+export const steamLicenseType = pgEnum("steam_license_type", ["OWNED", "FAMILY_SHARED"]);
+export const gameAcquisitionChannel = pgEnum("game_acquisition_channel", [
+  "SUBSCRIPTION",
+  "FAMILY_SHARED",
+  "PHYSICAL",
+  "SELF_PURCHASED"
+]);
+export const gameAcquisitionAvailability = pgEnum("game_acquisition_availability", [
+  "AVAILABLE",
+  "TEMPORARILY_UNAVAILABLE",
+  "EXPIRED"
+]);
+export const gamePlayScenario = pgEnum("game_play_scenario", ["COMMUTE", "FIXED"]);
+export const gameQueueState = pgEnum("game_queue_state", ["QUEUED", "PLAYING"]);
+export const gameCompletionGoal = pgEnum("game_completion_goal", ["MAIN", "EXTRA", "COMPLETE"]);
 export const platformLibraryMatchStatus = pgEnum("platform_library_match_status", ["MATCHED", "UNMATCHED", "IGNORED"]);
 export const gameMetadataField = pgEnum("game_metadata_field", [
   "NAME_ZH",
@@ -92,7 +112,59 @@ export const gameMetadataField = pgEnum("game_metadata_field", [
   "CRITIC_RATING",
   "MAIN_STORY_MINUTES",
   "EXTRA_STORY_MINUTES",
-  "COMPLETIONIST_MINUTES"
+  "COMPLETIONIST_MINUTES",
+  "PRIMARY_GENRE",
+  "SUB_GENRES",
+  "DUALSENSE_PROFILE",
+  "RAY_TRACING_PROFILE"
+]);
+export const dualsenseFeatureLevel = pgEnum("dualsense_feature_level", [
+  "NONE",
+  "BASIC",
+  "RICH",
+  "UNKNOWN"
+]);
+export const dualsenseEnvironment = pgEnum("dualsense_environment", [
+  "PS5_CONSOLE",
+  "PC_USB",
+  "PC_BLUETOOTH"
+]);
+export const pcWiredRequirement = pgEnum("pc_wired_requirement", [
+  "TRUE",
+  "FALSE",
+  "UNKNOWN"
+]);
+export const rayTracingLevel = pgEnum("ray_tracing_level", [
+  "NONE",
+  "RT_BASIC",
+  "RT_FULL_PATH_TRACING",
+  "UNKNOWN"
+]);
+export const gameGenre = pgEnum("game_genre", [
+  "ACT",
+  "ARPG",
+  "JRPG",
+  "CRPG",
+  "SRPG",
+  "FPS",
+  "TPS",
+  "AVG_GAL",
+  "SLG",
+  "RTS",
+  "FIGHTING",
+  "PLATFORMER",
+  "ROGUELIKE",
+  "SIMULATION",
+  "RACING",
+  "SPORTS",
+  "RHYTHM",
+  "PUZZLE",
+  "HORROR",
+  "SURVIVAL",
+  "SANDBOX",
+  "MMO",
+  "PARTY",
+  "OTHER"
 ]);
 export const metadataCandidateStatus = pgEnum("metadata_candidate_status", ["PENDING", "APPLIED", "REJECTED", "STALE"]);
 export const assetStatus = pgEnum("asset_status", ["ACTIVE", "SOLD", "DISCARDED"]);
@@ -105,6 +177,20 @@ export const inventoryMovementType = pgEnum("inventory_movement_type", [
   "TRANSFER_IN",
   "TRANSFER_OUT",
   "ADJUSTMENT"
+]);
+export const inventoryVariantMovementType = pgEnum("inventory_variant_movement_type", [
+  "STOCK_IN",
+  "OPEN_FOR_USE",
+  "SCRAP_IN_USE",
+  "REVERSE",
+  "LEGACY_PURCHASE",
+  "LEGACY_OPENED",
+  "LEGACY_CONSUMED",
+  "LEGACY_DISCARD_UNOPENED",
+  "LEGACY_GIFTED",
+  "LEGACY_TRANSFER_IN",
+  "LEGACY_TRANSFER_OUT",
+  "LEGACY_ADJUSTMENT"
 ]);
 
 export type ImportIssue = {
@@ -213,6 +299,37 @@ export const attachments = pgTable("attachments", {
   check("attachments_sort_order_nonnegative", sql`${table.sortOrder} >= 0`)
 ]);
 
+export const gameMediaItems = pgTable("game_media_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gameId: uuid("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  originalBlobId: uuid("original_blob_id").notNull().references(() => fileBlobs.id, { onDelete: "restrict" }),
+  thumbnailBlobId: uuid("thumbnail_blob_id").notNull().references(() => fileBlobs.id, { onDelete: "restrict" }),
+  source: gameMediaSource("source").notNull(),
+  externalMediaId: text("external_media_id"),
+  sourceUrl: text("source_url"),
+  title: text("title"),
+  capturedAt: timestamp("captured_at", { withTimezone: true, precision: 3 }),
+  width: integer("width").notNull(),
+  height: integer("height").notNull(),
+  sortOrder: integer("sort_order").default(0).notNull(),
+  sourceMetadata: jsonb("source_metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, precision: 3 }),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (table) => [
+  uniqueIndex("game_media_owner_blob_key").on(table.ownerUserId, table.originalBlobId),
+  uniqueIndex("game_media_owner_source_external_key")
+    .on(table.ownerUserId, table.source, table.externalMediaId)
+    .where(sql`${table.externalMediaId} IS NOT NULL`),
+  index("game_media_owner_active_idx").on(table.ownerUserId, table.deletedAt, table.capturedAt),
+  index("game_media_game_active_idx").on(table.gameId, table.deletedAt, table.sortOrder),
+  check("game_media_dimensions_positive", sql`${table.width} > 0 AND ${table.height} > 0`),
+  check("game_media_sort_order_nonnegative", sql`${table.sortOrder} >= 0`),
+  check("game_media_title_length", sql`${table.title} IS NULL OR char_length(${table.title}) BETWEEN 1 AND 500`),
+  check("game_media_steam_external_required", sql`${table.source} <> 'STEAM' OR ${table.externalMediaId} IS NOT NULL`)
+]);
+
 export const importBatches = pgTable("import_batches", {
   id: uuid("id").defaultRandom().primaryKey(),
   sourceName: text("source_name").notNull(),
@@ -316,6 +433,7 @@ export const games = pgTable("games", {
   ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
   nameZh: text("name_zh").notNull(),
   nameEn: text("name_en"),
+  searchAliases: jsonb("search_aliases").$type<string[]>().default([]).notNull(),
   nameEnSource: dataSource("name_en_source").default("IMPORT").notNull(),
   notes: text("notes"),
   platform: text("platform"),
@@ -326,6 +444,19 @@ export const games = pgTable("games", {
   proEnhanced: boolean("pro_enhanced"),
   controllerFeatures: text("controller_features"),
   modRequired: boolean("mod_required").default(false).notNull(),
+  primaryGenre: gameGenre("primary_genre"),
+  subGenres: gameGenre("sub_genres").array().default([]).notNull(),
+  genreSource: dataSource("genre_source"),
+  dualsenseAdaptiveTriggers: dualsenseFeatureLevel("dualsense_adaptive_triggers").default("UNKNOWN").notNull(),
+  dualsenseHapticFeedback: dualsenseFeatureLevel("dualsense_haptic_feedback").default("UNKNOWN").notNull(),
+  dualsenseControllerSpeaker: dualsenseFeatureLevel("dualsense_controller_speaker").default("UNKNOWN").notNull(),
+  dualsenseTouchpad: dualsenseFeatureLevel("dualsense_touchpad").default("UNKNOWN").notNull(),
+  dualsenseControllerMic: dualsenseFeatureLevel("dualsense_controller_mic").default("UNKNOWN").notNull(),
+  dualsenseNotes: text("dualsense_notes"),
+  pcWiredRequired: pcWiredRequirement("pc_wired_required").default("UNKNOWN").notNull(),
+  rayTracing: rayTracingLevel("ray_tracing").default("UNKNOWN").notNull(),
+  rayTracingNotes: text("ray_tracing_notes"),
+  hardwareProfileSource: dataSource("hardware_profile_source"),
   priorityLevel: integer("priority_level"),
   priorityRank: text("priority_rank"),
   queueOrder: integer("queue_order"),
@@ -339,6 +470,7 @@ export const games = pgTable("games", {
   ratingSource: gameRatingSource("rating_source"),
   ratingUpdatedAt: timestamp("rating_updated_at", { withTimezone: true, precision: 3 }),
   playStatus: gamePlayStatus("play_status"),
+  isCompleted: boolean("is_completed").default(false).notNull(),
   startedAt: date("started_at"),
   completedAt: date("completed_at"),
   lastPlayedAt: timestamp("last_played_at", { withTimezone: true, precision: 3 }),
@@ -348,6 +480,7 @@ export const games = pgTable("games", {
   estimatedHastilyMinutes: integer("estimated_hastily_minutes"),
   estimatedNormallyMinutes: integer("estimated_normally_minutes"),
   estimatedCompletelyMinutes: integer("estimated_completely_minutes"),
+  estimateSource: dataSource("estimate_source"),
   coverUrl: text("cover_url"),
   coverUrlSource: dataSource("cover_url_source"),
   firstObservedPlayedAt: timestamp("first_observed_played_at", { withTimezone: true, precision: 3 }),
@@ -355,6 +488,8 @@ export const games = pgTable("games", {
   steamAppId: integer("steam_app_id"),
   igdbGameId: integer("igdb_game_id"),
   igdbLastAttemptAt: timestamp("igdb_last_attempt_at", { withTimezone: true, precision: 3 }),
+  hltbGameId: integer("hltb_game_id"),
+  hltbLastAttemptAt: timestamp("hltb_last_attempt_at", { withTimezone: true, precision: 3 }),
   acquisitionNotes: text("acquisition_notes"),
   sourceBatchId: uuid("source_batch_id").references(() => importBatches.id, { onDelete: "restrict" }),
   sourceRow: integer("source_row"),
@@ -364,12 +499,18 @@ export const games = pgTable("games", {
   updatedAt: updatedAt()
 }, (table) => [
   uniqueIndex("games_import_source_key").on(table.sourceBatchId, table.sourceRow),
+  uniqueIndex("games_owner_id_key").on(table.ownerUserId, table.id),
   uniqueIndex("games_owner_steam_app_key").on(table.ownerUserId, table.steamAppId),
+  uniqueIndex("games_owner_active_igdb_key")
+    .on(table.ownerUserId, table.igdbGameId)
+    .where(sql`${table.deletedAt} IS NULL AND ${table.igdbGameId} IS NOT NULL`),
+  uniqueIndex("games_owner_hltb_game_key").on(table.ownerUserId, table.hltbGameId),
   index("games_owner_name_idx").on(table.ownerUserId, table.nameZh),
   index("games_owner_status_idx").on(table.ownerUserId, table.playStatus),
   index("games_owner_platform_idx").on(table.ownerUserId, table.platform),
   index("games_owner_deleted_idx").on(table.ownerUserId, table.deletedAt),
   check("games_name_length", sql`char_length(${table.nameZh}) BETWEEN 1 AND 200`),
+  check("games_search_aliases_array", sql`jsonb_typeof(${table.searchAliases}) = 'array'`),
   check("games_priority_level_range", sql`${table.priorityLevel} IS NULL OR ${table.priorityLevel} BETWEEN 0 AND 5`),
   check("games_priority_rank_value", sql`${table.priorityRank} IS NULL OR ${table.priorityRank} IN ('A', 'B')`),
   check("games_queue_order_range", sql`${table.queueOrder} IS NULL OR ${table.queueOrder} BETWEEN 1 AND 9999`),
@@ -391,8 +532,40 @@ export const games = pgTable("games", {
     AND (${table.estimatedNormallyMinutes} IS NULL OR ${table.estimatedNormallyMinutes} >= 0)
     AND (${table.estimatedCompletelyMinutes} IS NULL OR ${table.estimatedCompletelyMinutes} >= 0)
   `),
+  check("games_completion_not_legacy_status", sql`${table.playStatus} IS NULL OR ${table.playStatus} <> 'COMPLETED'`),
   check("games_date_order", sql`${table.startedAt} IS NULL OR ${table.completedAt} IS NULL OR ${table.completedAt} >= ${table.startedAt}`),
+  check("games_completion_date_requires_fact", sql`${table.completedAt} IS NULL OR ${table.isCompleted}`),
   check("games_version_positive", sql`${table.version} > 0`)
+]);
+
+/**
+ * DualSense capability truth is scoped by runtime environment. The legacy
+ * columns on games remain temporarily for rollback compatibility, but all new
+ * reads and writes use this matrix.
+ */
+export const gameDualsenseProfiles = pgTable("game_dualsense_profiles", {
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gameId: uuid("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  environment: dualsenseEnvironment("environment").notNull(),
+  adaptiveTriggers: dualsenseFeatureLevel("adaptive_triggers").default("UNKNOWN").notNull(),
+  hapticFeedback: dualsenseFeatureLevel("haptic_feedback").default("UNKNOWN").notNull(),
+  controllerSpeaker: dualsenseFeatureLevel("controller_speaker").default("UNKNOWN").notNull(),
+  touchpad: dualsenseFeatureLevel("touchpad").default("UNKNOWN").notNull(),
+  controllerMic: dualsenseFeatureLevel("controller_mic").default("UNKNOWN").notNull(),
+  notes: text("notes"),
+  source: dataSource("source").default("IMPORT").notNull(),
+  version: integer("version").default(1).notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (table) => [
+  primaryKey({ name: "game_dualsense_profiles_pkey", columns: [table.gameId, table.environment] }),
+  foreignKey({
+    name: "game_dualsense_profiles_owner_game_fk",
+    columns: [table.ownerUserId, table.gameId],
+    foreignColumns: [games.ownerUserId, games.id]
+  }).onDelete("cascade"),
+  index("game_dualsense_profiles_owner_environment_idx").on(table.ownerUserId, table.environment),
+  check("game_dualsense_profiles_version_positive", sql`${table.version} > 0`)
 ]);
 
 export const gameStatusAssignments = pgTable("game_status_assignments", {
@@ -401,7 +574,8 @@ export const gameStatusAssignments = pgTable("game_status_assignments", {
   createdAt: createdAt()
 }, (table) => [
   primaryKey({ name: "game_status_assignments_pkey", columns: [table.gameId, table.status] }),
-  index("game_status_assignments_status_game_idx").on(table.status, table.gameId)
+  index("game_status_assignments_status_game_idx").on(table.status, table.gameId),
+  check("game_status_assignments_completion_not_persisted", sql`${table.status} <> 'COMPLETED'`)
 ]);
 
 export const gamePlaySessions = pgTable("game_play_sessions", {
@@ -466,7 +640,12 @@ export const gameMetadataCandidates = pgTable("game_metadata_candidates", {
   provider: dataSource("provider").notNull(),
   externalGameId: text("external_game_id").notNull(),
   field: gameMetadataField("field").notNull(),
-  value: jsonb("value").$type<{ value: unknown; sourceUrl?: string; sourceLabel?: string }>().notNull(),
+  value: jsonb("value").$type<{
+    value: unknown;
+    sourceUrl?: string;
+    sourceLabel?: string;
+    metadata?: Record<string, unknown>;
+  }>().notNull(),
   confidence: integer("confidence").default(0).notNull(),
   status: metadataCandidateStatus("status").default("PENDING").notNull(),
   fetchedAt: timestamp("fetched_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
@@ -510,10 +689,15 @@ export const gameAcquisitions = pgTable("game_acquisitions", {
   gameId: uuid("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
   source: dataSource("source").notNull(),
   externalAcquisitionId: text("external_acquisition_id"),
+  channel: gameAcquisitionChannel("channel"),
+  platform: text("platform"),
+  availability: gameAcquisitionAvailability("availability").default("AVAILABLE").notNull(),
+  offlineCapable: boolean("offline_capable"),
   acquiredAt: timestamp("acquired_at", { withTimezone: true, precision: 3 }),
   isOwned: boolean("is_owned").default(true).notNull(),
   details: jsonb("details").$type<Record<string, unknown>>().default({}).notNull(),
   lastConfirmedAt: timestamp("last_confirmed_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+  version: integer("version").default(1).notNull(),
   createdAt: createdAt(),
   updatedAt: updatedAt()
 }, (table) => [
@@ -523,7 +707,34 @@ export const gameAcquisitions = pgTable("game_acquisitions", {
     table.externalAcquisitionId
   ),
   index("game_acquisitions_game_owned_idx").on(table.gameId, table.isOwned),
-  check("game_acquisitions_external_id_length", sql`${table.externalAcquisitionId} IS NULL OR char_length(${table.externalAcquisitionId}) BETWEEN 1 AND 300`)
+  index("game_acquisitions_owner_channel_idx").on(table.ownerUserId, table.channel, table.availability),
+  check("game_acquisitions_external_id_length", sql`${table.externalAcquisitionId} IS NULL OR char_length(${table.externalAcquisitionId}) BETWEEN 1 AND 300`),
+  check("game_acquisitions_platform_length", sql`${table.platform} IS NULL OR char_length(${table.platform}) BETWEEN 1 AND 60`),
+  check("game_acquisitions_version_positive", sql`${table.version} > 0`)
+]);
+
+export const gamePlayPlans = pgTable("game_play_plans", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  gameId: uuid("game_id").notNull().references(() => games.id, { onDelete: "cascade" }),
+  scenario: gamePlayScenario("scenario").notNull(),
+  state: gameQueueState("state").default("QUEUED").notNull(),
+  acquisitionId: uuid("acquisition_id").references(() => gameAcquisitions.id, { onDelete: "set null" }),
+  preferredDevice: text("preferred_device"),
+  completionGoal: gameCompletionGoal("completion_goal").default("EXTRA").notNull(),
+  queueOrder: integer("queue_order"),
+  version: integer("version").default(1).notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (table) => [
+  uniqueIndex("game_play_plans_owner_game_scenario_key").on(table.ownerUserId, table.gameId, table.scenario),
+  uniqueIndex("game_play_plans_owner_scenario_playing_key")
+    .on(table.ownerUserId, table.scenario)
+    .where(sql`${table.state} = 'PLAYING'`),
+  index("game_play_plans_owner_scenario_queue_idx").on(table.ownerUserId, table.scenario, table.state, table.queueOrder),
+  check("game_play_plans_queue_order_range", sql`${table.queueOrder} IS NULL OR ${table.queueOrder} BETWEEN 1 AND 9999`),
+  check("game_play_plans_device_length", sql`${table.preferredDevice} IS NULL OR char_length(${table.preferredDevice}) BETWEEN 1 AND 60`),
+  check("game_play_plans_version_positive", sql`${table.version} > 0`)
 ]);
 
 export const gameActivitySnapshots = pgTable("game_activity_snapshots", {
@@ -562,10 +773,20 @@ export const gameReleaseEvents = pgTable("game_release_events", {
   nameEn: text("name_en"),
   platform: text("platform").notNull(),
   releaseDate: date("release_date").notNull(),
+  datePrecision: text("date_precision").default("DAY").notNull(),
   region: text("region").default("GLOBAL").notNull(),
   isAnnounced: boolean("is_announced").default(true).notNull(),
   storeUrl: text("store_url"),
   coverUrl: text("cover_url"),
+  storeProvider: text("store_provider"),
+  storeExternalGameId: text("store_external_game_id"),
+  summaryZh: text("summary_zh"),
+  summaryEn: text("summary_en"),
+  developers: jsonb("developers").$type<string[]>().default([]).notNull(),
+  publishers: jsonb("publishers").$type<string[]>().default([]).notNull(),
+  genresZh: jsonb("genres_zh").$type<string[]>().default([]).notNull(),
+  genresEn: jsonb("genres_en").$type<string[]>().default([]).notNull(),
+  metadataFetchedAt: timestamp("metadata_fetched_at", { withTimezone: true, precision: 3 }),
   fetchedAt: timestamp("fetched_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
   createdAt: createdAt(),
   updatedAt: updatedAt()
@@ -574,7 +795,46 @@ export const gameReleaseEvents = pgTable("game_release_events", {
   index("game_release_events_owner_date_idx").on(table.ownerUserId, table.releaseDate, table.platform),
   check("game_release_events_name_length", sql`char_length(${table.nameZh}) BETWEEN 1 AND 300`),
   check("game_release_events_platform_length", sql`char_length(${table.platform}) BETWEEN 1 AND 100`),
-  check("game_release_events_dedupe_length", sql`char_length(${table.dedupeKey}) BETWEEN 3 AND 500`)
+  check("game_release_events_date_precision_value", sql`${table.datePrecision} IN ('DAY', 'MONTH', 'QUARTER', 'YEAR')`),
+  check("game_release_events_dedupe_length", sql`char_length(${table.dedupeKey}) BETWEEN 3 AND 500`),
+  check("game_release_events_store_provider_value", sql`${table.storeProvider} IS NULL OR ${table.storeProvider} IN ('STEAM', 'PLAYSTATION', 'NINTENDO')`),
+  check("game_release_events_developers_array", sql`jsonb_typeof(${table.developers}) = 'array'`),
+  check("game_release_events_publishers_array", sql`jsonb_typeof(${table.publishers}) = 'array'`),
+  check("game_release_events_genres_zh_array", sql`jsonb_typeof(${table.genresZh}) = 'array'`),
+  check("game_release_events_genres_en_array", sql`jsonb_typeof(${table.genresEn}) = 'array'`)
+]);
+
+export const platformWishlistItems = pgTable("platform_wishlist_items", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  provider: externalProvider("provider").notNull(),
+  externalGameId: text("external_game_id").notNull(),
+  name: text("name").notNull(),
+  priority: integer("priority"),
+  planOrder: integer("plan_order"),
+  addedAt: timestamp("added_at", { withTimezone: true, precision: 3 }),
+  platform: text("platform"),
+  coverUrl: text("cover_url"),
+  releaseDate: date("release_date"),
+  releaseDatePrecision: text("release_date_precision").default("DAY").notNull(),
+  storeUrl: text("store_url"),
+  matchedGameId: uuid("matched_game_id").references(() => games.id, { onDelete: "set null" }),
+  isActive: boolean("is_active").default(true).notNull(),
+  rawMetadata: jsonb("raw_metadata").$type<Record<string, unknown>>().default({}).notNull(),
+  lastSeenAt: timestamp("last_seen_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (table) => [
+  uniqueIndex("platform_wishlist_items_owner_provider_game_key").on(table.ownerUserId, table.provider, table.externalGameId),
+  index("platform_wishlist_items_owner_provider_active_idx").on(table.ownerUserId, table.provider, table.isActive),
+  index("platform_wishlist_items_owner_plan_idx").on(table.ownerUserId, table.planOrder),
+  index("platform_wishlist_items_matched_game_idx").on(table.matchedGameId),
+  check("platform_wishlist_items_provider_value", sql`${table.provider} IN ('STEAM', 'PLAYSTATION', 'NINTENDO')`),
+  check("platform_wishlist_items_external_id_length", sql`char_length(${table.externalGameId}) BETWEEN 1 AND 200`),
+  check("platform_wishlist_items_name_length", sql`char_length(${table.name}) BETWEEN 1 AND 300`),
+  check("platform_wishlist_items_priority_nonnegative", sql`${table.priority} IS NULL OR ${table.priority} >= 0`),
+  check("platform_wishlist_items_plan_order_range", sql`${table.planOrder} IS NULL OR ${table.planOrder} BETWEEN 1 AND 9999`),
+  check("platform_wishlist_items_date_precision_value", sql`${table.releaseDatePrecision} IN ('DAY', 'MONTH', 'QUARTER', 'YEAR')`)
 ]);
 
 export const syncJobs = pgTable("sync_jobs", {
@@ -618,6 +878,10 @@ export const steamLibraryItems = pgTable("steam_library_items", {
   matchedGameId: uuid("matched_game_id").references(() => games.id, { onDelete: "set null" }),
   matchConfidence: integer("match_confidence").default(0).notNull(),
   matchMethod: text("match_method").notNull(),
+  licenseType: steamLicenseType("license_type").default("OWNED").notNull(),
+  licenseOwnerSteamIds: jsonb("license_owner_steam_ids").$type<string[]>().default([]).notNull(),
+  familyGroupId: text("family_group_id"),
+  excludeReason: integer("exclude_reason"),
   isOwned: boolean("is_owned").default(true).notNull(),
   lastSeenJobId: uuid("last_seen_job_id").references(() => syncJobs.id, { onDelete: "set null" }),
   lastSeenAt: timestamp("last_seen_at", { withTimezone: true, precision: 3 }).defaultNow().notNull(),
@@ -634,6 +898,8 @@ export const steamLibraryItems = pgTable("steam_library_items", {
     AND (${table.recentPlaytimeMinutes} IS NULL OR ${table.recentPlaytimeMinutes} >= 0)
   `),
   check("steam_library_items_confidence_range", sql`${table.matchConfidence} BETWEEN 0 AND 100`),
+  check("steam_library_items_license_owners_array", sql`jsonb_typeof(${table.licenseOwnerSteamIds}) = 'array'`),
+  check("steam_library_items_exclude_reason_nonnegative", sql`${table.excludeReason} IS NULL OR ${table.excludeReason} >= 0`),
   check("steam_library_items_match_invariant", sql`
     (${table.matchStatus} = 'MATCHED' AND ${table.matchedGameId} IS NOT NULL)
     OR (${table.matchStatus} <> 'MATCHED' AND ${table.matchedGameId} IS NULL)
@@ -756,4 +1022,92 @@ export const inventoryMovements = pgTable("inventory_movements", {
 }, (table) => [
   index("inventory_movements_item_created_idx").on(table.itemId, table.createdAt),
   check("inventory_movements_nonzero", sql`${table.unopenedDelta} <> 0 OR ${table.openedDelta} <> 0`)
+]);
+
+export const inventoryProducts = pgTable("inventory_products", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  productName: text("product_name").notNull(),
+  brand: text("brand"),
+  style: text("style"),
+  denier: text("denier"),
+  material: text("material"),
+  composition: text("composition"),
+  purchaseUrl: text("purchase_url"),
+  priorityCode: text("priority_code"),
+  consumptionPriority: integer("priority_rating").default(0).notNull(),
+  productRating: integer("product_rating").default(0).notNull(),
+  legacyGroupKey: text("legacy_group_key"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, precision: 3 }),
+  version: integer("version").default(1).notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (table) => [
+  uniqueIndex("inventory_products_owner_active_name_key")
+    .on(table.ownerUserId, table.productName)
+    .where(sql`${table.deletedAt} IS NULL`),
+  index("inventory_products_owner_name_idx").on(table.ownerUserId, table.productName),
+  check("inventory_products_name_length", sql`char_length(${table.productName}) BETWEEN 1 AND 300`),
+  check("inventory_products_purchase_url", sql`${table.purchaseUrl} IS NULL OR (char_length(${table.purchaseUrl}) BETWEEN 8 AND 2048 AND ${table.purchaseUrl} ~ '^https?://')`),
+  check("inventory_products_priority_rating_range", sql`${table.consumptionPriority} BETWEEN 0 AND 5`),
+  check("inventory_products_product_rating_range", sql`${table.productRating} BETWEEN 0 AND 5`),
+  check("inventory_products_version_positive", sql`${table.version} > 0`)
+]);
+
+export const inventoryVariants = pgTable("inventory_variants", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  productId: uuid("product_id").notNull().references(() => inventoryProducts.id, { onDelete: "restrict" }),
+  ownerUserId: uuid("owner_user_id").notNull().references(() => users.id, { onDelete: "cascade" }),
+  legacyItemId: uuid("legacy_item_id").references(() => inventoryItems.id, { onDelete: "restrict" }),
+  color: text("color").notNull(),
+  colorSource: text("color_source"),
+  unitPrice: numeric("unit_price", { precision: 12, scale: 2 }),
+  unopenedQuantity: integer("unopened_quantity").default(0).notNull(),
+  inUseQuantity: integer("in_use_quantity").default(0).notNull(),
+  currentLocation: text("current_location"),
+  purchaseUrlOverride: text("purchase_url_override"),
+  notes: text("notes"),
+  repurchaseDecision: text("repurchase_decision"),
+  repurchaseSource: text("repurchase_source"),
+  deletedAt: timestamp("deleted_at", { withTimezone: true, precision: 3 }),
+  version: integer("version").default(1).notNull(),
+  createdAt: createdAt(),
+  updatedAt: updatedAt()
+}, (table) => [
+  uniqueIndex("inventory_variants_legacy_item_key").on(table.legacyItemId),
+  uniqueIndex("inventory_variants_product_active_color_key")
+    .on(table.productId, table.color)
+    .where(sql`${table.deletedAt} IS NULL`),
+  index("inventory_variants_owner_product_idx").on(table.ownerUserId, table.productId),
+  check("inventory_variants_color_length", sql`char_length(${table.color}) BETWEEN 1 AND 100`),
+  check("inventory_variants_quantity_nonnegative", sql`${table.unopenedQuantity} >= 0 AND ${table.inUseQuantity} >= 0`),
+  check("inventory_variants_unit_price_nonnegative", sql`${table.unitPrice} IS NULL OR ${table.unitPrice} >= 0`),
+  check("inventory_variants_purchase_url_override", sql`${table.purchaseUrlOverride} IS NULL OR (char_length(${table.purchaseUrlOverride}) BETWEEN 8 AND 2048 AND ${table.purchaseUrlOverride} ~ '^https?://')`),
+  check("inventory_variants_version_positive", sql`${table.version} > 0`)
+]);
+
+export const inventoryVariantMovements = pgTable("inventory_variant_movements", {
+  id: uuid("id").defaultRandom().primaryKey(),
+  variantId: uuid("variant_id").notNull().references(() => inventoryVariants.id, { onDelete: "restrict" }),
+  legacyMovementId: uuid("legacy_movement_id").references(() => inventoryMovements.id, { onDelete: "restrict" }),
+  movementType: inventoryVariantMovementType("movement_type").notNull(),
+  unopenedDelta: integer("unopened_delta").default(0).notNull(),
+  inUseDelta: integer("in_use_delta").default(0).notNull(),
+  scrappedDelta: integer("scrapped_delta").default(0).notNull(),
+  reason: text("reason").notNull(),
+  actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+  idempotencyKey: text("idempotency_key").notNull(),
+  reversesMovementId: uuid("reverses_movement_id").references((): AnyPgColumn => inventoryVariantMovements.id, { onDelete: "restrict" }),
+  createdAt: createdAt()
+}, (table) => [
+  uniqueIndex("inventory_variant_movements_legacy_key").on(table.legacyMovementId),
+  uniqueIndex("inventory_variant_movements_idempotency_key").on(table.idempotencyKey),
+  uniqueIndex("inventory_variant_movements_single_reverse_key")
+    .on(table.reversesMovementId)
+    .where(sql`${table.reversesMovementId} IS NOT NULL`),
+  index("inventory_variant_movements_variant_created_idx").on(table.variantId, table.createdAt),
+  check("inventory_variant_movements_nonzero", sql`${table.unopenedDelta} <> 0 OR ${table.inUseDelta} <> 0 OR ${table.scrappedDelta} <> 0`),
+  check("inventory_variant_movements_scrapped_nonnegative_action", sql`${table.movementType} NOT IN ('SCRAP_IN_USE', 'LEGACY_DISCARD_UNOPENED') OR ${table.scrappedDelta} > 0`),
+  check("inventory_variant_movements_idempotency_length", sql`char_length(${table.idempotencyKey}) BETWEEN 8 AND 200`),
+  check("inventory_variant_movements_reason_length", sql`char_length(${table.reason}) BETWEEN 1 AND 500`)
 ]);

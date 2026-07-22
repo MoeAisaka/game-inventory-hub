@@ -17,6 +17,12 @@ A self-hosted dashboard for a personal game library and physical/digital invento
 - Hash-verified four-source catalog rebuild plans for Steam, PlayStation, Nintendo, and IGDB
 - Purchase-link normalization and safe cover-image host policies
 - Single-owner authentication with Argon2id password hashes and server-side sessions
+- Action-oriented home queue, play planning, unified wishlist, and release calendar
+- Media library with content-addressed originals, bounded uploads, and generated thumbnails
+- Inventory v2 products, variants, auditable movements, and movement reversal
+- Multilingual and typo-tolerant search with platform-aware identity matching
+- Optional Steam Family, screenshot, wishlist, and public store integrations
+- Controller and platform capability profiles with purchase guidance
 
 ## Security defaults
 
@@ -46,8 +52,10 @@ Optional Sidecars have independent dependencies and private state directories:
 ```bash
 npm --prefix integrations/playstation-sidecar ci
 npm --prefix integrations/nintendo-sidecar ci
+npm --prefix integrations/steam-family-sidecar ci
 npm run psn:test
 npm run nintendo:test
+npm run steam-family:test
 ```
 
 The catalog rebuild is deliberately fail-closed. Generate and inspect a plan first, create a database backup, and calculate its SHA-256 digest. The apply command requires the backup file itself, its expected digest, and the confirmed plan digest; it verifies both files before opening a database connection. Set `ALLOW_CATALOG_REBUILD=true` only for the reviewed execution. Never use the example snapshots as production data.
@@ -73,4 +81,4 @@ Run behind an HTTPS reverse proxy. Keep PostgreSQL private, set `SESSION_COOKIE_
 
 ## Status
 
-Community edition `0.14.0`. Connectors are optional and disabled when credentials are absent. The repository contains no production database, account identifier, imported library, API credential, deployment hostname, or private Sidecar state.
+Community edition `0.34.0`. Connectors are optional and disabled when credentials are absent. The repository contains no production database, account identifier, imported library, API credential, deployment hostname, browser artifact, operations script, or private Sidecar state.

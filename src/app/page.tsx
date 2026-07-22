@@ -1,20 +1,22 @@
 import { redirect } from "next/navigation";
 import { AppShell } from "@/components/app-shell";
 import { currentSession } from "@/server/auth/current";
-import { getDashboardData } from "@/server/services/dashboard";
-import { getDashboardFilters } from "@/server/services/preferences";
-import { DashboardClient } from "./dashboard-client";
+import { getHomeData } from "@/server/services/home";
+import { getHomeQueuePreferences } from "@/server/services/preferences";
+import { ActionHomeClient } from "./action-home-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function DashboardPage() {
   const session = await currentSession();
   if (!session) redirect("/login");
-  const filters = await getDashboardFilters(session.userId);
-  const initialData = await getDashboardData(session.userId, filters);
+  const [data, queuePreferences] = await Promise.all([
+    getHomeData(session.userId),
+    getHomeQueuePreferences(session.userId)
+  ]);
   return (
     <AppShell username={session.username} active="/">
-      <DashboardClient initialData={initialData} />
+      <ActionHomeClient data={data} queuePreferences={queuePreferences} />
     </AppShell>
   );
 }
